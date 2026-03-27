@@ -223,7 +223,6 @@
             overflow: hidden;
         }
 
-        /* 頂部欄 */
         .topbar {
             background: var(--bg-primary);
             padding: 20px 30px;
@@ -246,22 +245,6 @@
             gap: 8px;
             font-size: 0.9em;
             color: var(--text-secondary);
-        }
-
-        .breadcrumb span {
-            display: flex;
-            align-items: center;
-        }
-
-        .breadcrumb .separator {
-            margin: 0 4px;
-            opacity: 0.5;
-        }
-
-        .page-title {
-            font-size: 1.5em;
-            font-weight: 700;
-            color: var(--text-primary);
         }
 
         .topbar-right {
@@ -289,7 +272,6 @@
             background: var(--border);
         }
 
-        /* 內容區域 */
         .content {
             flex: 1;
             overflow-y: auto;
@@ -303,7 +285,6 @@
             width: 100%;
         }
 
-        /* 首頁樣式 */
         .hero {
             background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             border-radius: 12px;
@@ -387,19 +368,30 @@
         }
 
         .stat-change {
-            font-size: 0.8em;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .stat-status {
+            font-size: 0.85em;
             font-weight: 600;
+            margin-top: 8px;
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 8px;
         }
 
-        .stat-change.positive {
-            color: var(--success);
+        .stat-status.red {
+            color: #ef4444;
         }
 
-        .stat-change.negative {
-            color: var(--danger);
+        .stat-status.yellow {
+            color: #f59e0b;
+        }
+
+        .stat-status.green {
+            color: #10b981;
         }
 
         .apps-section h3 {
@@ -485,7 +477,6 @@
             color: var(--secondary);
         }
 
-        /* 加載指示 */
         .loading-indicator {
             display: none;
             position: fixed;
@@ -533,7 +524,6 @@
             }
         }
 
-        /* iframe 容器 */
         .iframe-wrapper {
             display: none;
             position: absolute;
@@ -556,7 +546,6 @@
             background: var(--bg-primary);
         }
 
-        /* 響應式設計 */
         @media (max-width: 1200px) {
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -648,7 +637,6 @@
             background: var(--border);
         }
 
-        /* 滾動條樣式 */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -670,10 +658,8 @@
 </head>
 <body>
     <div class="container">
-        <!-- 側邊欄 -->
         <aside class="sidebar">
             <div class="sidebar-content">
-                <!-- Logo -->
                 <div class="logo">
                     <div class="logo-icon">📊</div>
                     <div class="logo-text">
@@ -682,7 +668,6 @@
                     </div>
                 </div>
 
-                <!-- 主要應用 -->
                 <div class="nav-section">
                     <span class="nav-label">應用</span>
                     <div class="nav-items">
@@ -710,7 +695,6 @@
                     </div>
                 </div>
 
-                <!-- 其他 -->
                 <div class="nav-section">
                     <span class="nav-label">系統</span>
                     <div class="nav-items">
@@ -725,7 +709,6 @@
                     </div>
                 </div>
 
-                <!-- 用戶信息 -->
                 <div class="sidebar-footer">
                     <div class="user-profile">
                         <div class="user-avatar">M</div>
@@ -738,9 +721,7 @@
             </div>
         </aside>
 
-        <!-- 主內容 -->
         <div class="main">
-            <!-- 頂部欄 -->
             <header class="topbar">
                 <div class="topbar-left">
                     <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
@@ -754,9 +735,7 @@
                 </div>
             </header>
 
-            <!-- 內容區域 -->
             <div class="content" id="content">
-                <!-- 首頁內容 -->
                 <div id="home-view" class="content-wrapper">
                     <div class="hero">
                         <div class="hero-content">
@@ -766,29 +745,38 @@
                     </div>
 
                     <div class="stats-grid">
+                        <!-- 本週排程卡片 -->
                         <div class="stat-card">
-                            <div class="stat-icon">📌</div>
-                            <div class="stat-label">進行中的項目</div>
-                            <div class="stat-value">12</div>
-                            <div class="stat-change positive">↑ 2 個新項目</div>
+                            <div class="stat-icon">📋</div>
+                            <div class="stat-label">本週排程</div>
+                            <div class="stat-value" id="thisWeek-count">-</div>
+                            <div class="stat-change" id="thisWeek-persons">-</div>
+                            <div class="stat-status" id="thisWeek-status">-</div>
                         </div>
+
+                        <!-- 下週預定排程卡片 -->
                         <div class="stat-card">
-                            <div class="stat-icon">✅</div>
-                            <div class="stat-label">本月完成</div>
-                            <div class="stat-value">48</div>
-                            <div class="stat-change positive">↑ 92% 完成率</div>
+                            <div class="stat-icon">📅</div>
+                            <div class="stat-label">下週預定排程</div>
+                            <div class="stat-value" id="nextWeek-count">-</div>
+                            <div class="stat-change" id="nextWeek-persons">-</div>
+                            <div class="stat-status" id="nextWeek-status">-</div>
                         </div>
+
+                        <!-- 檢測人員卡片 -->
                         <div class="stat-card">
                             <div class="stat-icon">👥</div>
                             <div class="stat-label">檢測人員</div>
                             <div class="stat-value">35</div>
                             <div class="stat-change">在線 28 人</div>
                         </div>
+
+                        <!-- 系統狀態卡片 -->
                         <div class="stat-card">
                             <div class="stat-icon">📊</div>
                             <div class="stat-label">系統狀態</div>
                             <div class="stat-value">正常</div>
-                            <div class="stat-change positive">↑ 99.9% 運作時間</div>
+                            <div class="stat-change">↑ 99.9% 運作時間</div>
                         </div>
                     </div>
 
@@ -826,20 +814,17 @@
                     </div>
                 </div>
 
-                <!-- 應用容器 -->
                 <div id="iframe-container" class="iframe-wrapper"></div>
             </div>
         </div>
     </div>
 
-    <!-- 加載指示 -->
     <div class="loading-indicator" id="loading">
         <div class="spinner"></div>
         <span>正在載入應用...</span>
     </div>
 
     <script>
-        // ======================== 預先配置的應用 URL（aomtne） ========================
         const APP_CONFIG = {
             home: {
                 name: '首頁',
@@ -875,7 +860,6 @@
 
         let currentApp = 'home';
 
-        // ======================== 應用切換 ========================
         function switchApp(appId, element) {
             if (!APP_CONFIG[appId]) return;
 
@@ -884,22 +868,18 @@
             const iframeContainer = document.getElementById('iframe-container');
             const breadcrumb = document.getElementById('breadcrumb-home');
 
-            // 更新導航項目
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.classList.remove('active');
             });
             if (element) element.classList.add('active');
 
-            // 更新麵包屑
             breadcrumb.textContent = config.name;
 
-            // 隱藏側邊欄（手機版）
             if (window.innerWidth <= 768) {
                 document.querySelector('.sidebar').classList.remove('open');
             }
 
             if (config.isExternal) {
-                // 外部應用（iframe）
                 homeView.style.display = 'none';
                 iframeContainer.classList.add('active');
 
@@ -908,18 +888,17 @@
 
                 const iframe = iframeContainer.querySelector('iframe');
                 iframe.onload = () => showLoading(false);
-                setTimeout(() => showLoading(false), 3000); // 超時保護
+                setTimeout(() => showLoading(false), 3000);
             } else {
-                // 內部頁面（首頁）
                 iframeContainer.classList.remove('active');
                 homeView.style.display = 'block';
                 showLoading(false);
+                loadAndRenderScheduleData();
             }
 
             currentApp = appId;
         }
 
-        // ======================== 工具函數 ========================
         function showLoading(show) {
             const loading = document.getElementById('loading');
             if (show) {
@@ -938,12 +917,87 @@
             alert(message);
         }
 
-        // ======================== 事件監聽 ========================
-        document.addEventListener('DOMContentLoaded', () => {
-            // 初始化
-            switchApp('home');
+        // ======================== 讀取和渲染排程數據 ========================
+        function loadAndRenderScheduleData() {
+            const thisWeekDataStr = localStorage.getItem('scheduleData_thisWeek');
+            const nextWeekDataStr = localStorage.getItem('scheduleData_nextWeek');
 
-            // 點擊外部關閉側邊欄
+            if (thisWeekDataStr) {
+                const thisWeekData = JSON.parse(thisWeekDataStr);
+                renderScheduleCard('thisWeek', thisWeekData);
+            } else {
+                renderScheduleCardEmpty('thisWeek');
+            }
+
+            if (nextWeekDataStr) {
+                const nextWeekData = JSON.parse(nextWeekDataStr);
+                renderScheduleCard('nextWeek', nextWeekData);
+            } else {
+                renderScheduleCardEmpty('nextWeek');
+            }
+        }
+
+        function renderScheduleCard(week, data) {
+            const countElement = document.getElementById(`${week}-count`);
+            if (countElement) {
+                countElement.textContent = data.itemCount;
+            }
+
+            const personsElement = document.getElementById(`${week}-persons`);
+            if (personsElement) {
+                if (data.assignedPersons.length > 0) {
+                    const personsList = data.assignedPersons.join(', ');
+                    personsElement.textContent = `(${personsList})`;
+                } else {
+                    personsElement.textContent = '(無派工)';
+                }
+            }
+
+            const statusElement = document.getElementById(`${week}-status`);
+            if (statusElement) {
+                const available = data.availablePersons;
+                let status, color;
+
+                if (available <= 3) {
+                    status = '🔴 人力緊張';
+                    color = 'red';
+                } else if (available >= 4 && available <= 8) {
+                    status = '🟡 人力適中';
+                    color = 'yellow';
+                } else {
+                    status = '🟢 人力充足';
+                    color = 'green';
+                }
+
+                statusElement.textContent = `${status} (${available}人可用)`;
+                statusElement.className = `stat-status ${color}`;
+            }
+        }
+
+        function renderScheduleCardEmpty(week) {
+            const countElement = document.getElementById(`${week}-count`);
+            const personsElement = document.getElementById(`${week}-persons`);
+            const statusElement = document.getElementById(`${week}-status`);
+
+            if (countElement) countElement.textContent = '-';
+            if (personsElement) personsElement.textContent = '(未連接)';
+            if (statusElement) {
+                statusElement.textContent = '等待數據...';
+                statusElement.className = 'stat-status';
+            }
+        }
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'scheduleData_thisWeek' || event.key === 'scheduleData_nextWeek') {
+                loadAndRenderScheduleData();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            switchApp('home');
+            loadAndRenderScheduleData();
+            setInterval(loadAndRenderScheduleData, 5 * 60 * 1000);
+
             document.addEventListener('click', (e) => {
                 const sidebar = document.querySelector('.sidebar');
                 const toggle = document.querySelector('.menu-toggle');
@@ -955,14 +1009,12 @@
             });
         });
 
-        // 響應式設計
         window.addEventListener('resize', () => {
             if (window.innerWidth > 768) {
                 document.querySelector('.sidebar').classList.remove('open');
             }
         });
 
-        // 鍵盤快捷鍵
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
                 const shortcuts = {
