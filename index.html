@@ -370,7 +370,10 @@
         .stat-change {
             font-size: 0.85em;
             color: var(--text-secondary);
-            line-height: 1.5;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         .stat-status {
@@ -478,7 +481,7 @@
         }
 
         .loading-indicator {
-            display: none;
+            display: none !important;
             position: fixed;
             bottom: 30px;
             right: 30px;
@@ -489,9 +492,6 @@
             font-size: 0.9em;
             color: var(--text-secondary);
             z-index: 999;
-            display: flex;
-            align-items: center;
-            gap: 12px;
         }
 
         .loading-indicator.show {
@@ -930,27 +930,31 @@
             const personsElement = document.getElementById(`${week}-persons`);
             if (personsElement) {
                 if (data.jobs && data.jobs.length > 0) {
-                    // 格式化工作信息：台中#6 (陳柏均等5人) [2026-03-23 ~ 2026-03-29]
+                    // 條列式格式：每行一個工作項目
                     const jobDescriptions = data.jobs.map(job => {
-                        const note = job.note || job.category;  // 優先使用備註，否則用分類
-                        const firstPerson = job.persons[0];  // 取排序最上面的人
+                        const note = job.note || job.category;
+                        const firstPerson = job.persons[0];
                         const count = job.persons.length;
-                        const dateRange = `${job.start} ~ ${job.end}`;
+                        const dateRange = `${job.start.substring(5)} ~ ${job.end.substring(5)}`;  // 只保留月-日
                         
                         if (count === 1) {
                             return `${note} (${firstPerson}) [${dateRange}]`;
                         } else {
                             return `${note} (${firstPerson}等${count}人) [${dateRange}]`;
                         }
-                    }).join(' | ');
+                    }).join('\n');  // 改成換行而不是 ' | '
                     
+                    // 使用 pre-wrap 保留換行
                     personsElement.textContent = jobDescriptions;
+                    personsElement.style.whiteSpace = 'pre-wrap';
+                    personsElement.style.wordWrap = 'break-word';
                 } else if (data.assignedPersons && data.assignedPersons.length > 0) {
-                    // 降級方案：如果沒有 jobs，使用原有格式
                     const personsList = data.assignedPersons.join(', ');
                     personsElement.textContent = `(${personsList})`;
+                    personsElement.style.whiteSpace = 'normal';
                 } else {
                     personsElement.textContent = '(無派工)';
+                    personsElement.style.whiteSpace = 'normal';
                 }
             }
 
