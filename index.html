@@ -935,14 +935,30 @@
                         const note = job.note || job.category;
                         const firstPerson = job.persons[0];
                         const count = job.persons.length;
-                        const dateRange = `${job.start.substring(5)} ~ ${job.end.substring(5)}`;  // 只保留月-日
+                        
+                        // 提取日期部分，移除時間戳記
+                        let startDate = job.start;
+                        let endDate = job.end;
+                        
+                        // 移除時間部分 (T 之後的所有內容)
+                        if (startDate && startDate.includes('T')) {
+                            startDate = startDate.split('T')[0];
+                        }
+                        if (endDate && endDate.includes('T')) {
+                            endDate = endDate.split('T')[0];
+                        }
+                        
+                        // 從完整日期中提取 MM-DD
+                        const startMMDD = startDate ? startDate.substring(5) : '';  // YYYY-MM-DD -> MM-DD
+                        const endMMDD = endDate ? endDate.substring(5) : '';        // YYYY-MM-DD -> MM-DD
+                        const dateRange = `[${startMMDD} ~ ${endMMDD}]`;
                         
                         if (count === 1) {
-                            return `${note} (${firstPerson}) [${dateRange}]`;
+                            return `${note} (${firstPerson}) ${dateRange}`;
                         } else {
-                            return `${note} (${firstPerson}等${count}人) [${dateRange}]`;
+                            return `${note} (${firstPerson}等${count}人) ${dateRange}`;
                         }
-                    }).join('\n');  // 改成換行而不是 ' | '
+                    }).join('\n');  // 換行
                     
                     // 使用 pre-wrap 保留換行
                     personsElement.textContent = jobDescriptions;
