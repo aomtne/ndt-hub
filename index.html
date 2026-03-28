@@ -692,6 +692,10 @@
                             <div class="nav-icon">👥</div>
                             <div class="nav-text">人資摘要</div>
                         </div>
+                        <div class="nav-item" onclick="switchApp('quote', this)">
+                            <div class="nav-icon">💰</div>
+                            <div class="nav-text">檢測報價</div>
+                        </div>
                     </div>
                 </div>
 
@@ -794,6 +798,13 @@
                                 <div class="app-description">查看團隊成員資訊、績效評估和人力資源統計。</div>
                                 <a href="#" class="app-link">進入應用 →</a>
                             </div>
+
+                            <div class="app-card" onclick="switchApp('quote', document.querySelector('[onclick=\"switchApp(\\\"quote\\\", this)\"]'))">
+                                <div class="app-icon">💰</div>
+                                <div class="app-name">檢測報價系統</div>
+                                <div class="app-description">查詢和分析 NDT 檢測報價，管理派工統計和檢測成本。</div>
+                                <a href="#" class="app-link">進入應用 →</a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -838,6 +849,12 @@
                 name: '人資摘要',
                 icon: '👥',
                 url: 'https://aomtne.github.io/HR_Summary/index.html',
+                isExternal: true
+            },
+            quote: {
+                name: '檢測報價',
+                icon: '💰',
+                url: 'https://aomtne.github.io/Quote/index.html',
                 isExternal: true
             }
         };
