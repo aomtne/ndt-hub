@@ -764,7 +764,7 @@
             <input type="password" class="input-field" id="loginPassword" placeholder="密碼" autocomplete="current-password">
             <button class="login-btn" id="loginBtn" onclick="doLogin()">登入</button>
             <div class="login-error" id="loginError"></div>
-            <span class="guest-link" onclick="guestLogin()">以訪客身份瀏覽（僅供觀看）</span>
+            <span class="guest-link" onclick="guestLogin()">以主管身份瀏覽</span>
         </div>
     </div>
 
@@ -956,9 +956,6 @@
 
     <script>
         // ======================== Auth System ========================
-        const AUTH_SHEET_ID = '1OENJ4A0iXW9E8OBx9sgt0JwfBWOFOaLP8PiolxOhjqo';
-        const AUTH_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + AUTH_SHEET_ID + '/gviz/tq?tqx=out:json';
-
         let currentUser = null; // { account, role }
 
         const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
@@ -968,17 +965,11 @@
 
         async function fetchUsers() {
             try {
-                const res = await fetch(AUTH_CSV_URL);
-                const text = await res.text();
-                // Parse Google Visualization JSON response
-                const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
-                const rows = json.table.rows;
-                const cols = json.table.cols;
-                return rows.map(r => ({
-                    account: r.c[0] ? String(r.c[0].v) : '',
-                    password: r.c[1] ? String(r.c[1].v) : '',
-                    role: r.c[2] ? String(r.c[2].v) : 'user'
-                })).filter(u => u.account);
+                const url = getAuthScriptUrl() + '?action=list';
+                const res = await fetch(url, { redirect: 'follow' });
+                const data = await res.json();
+                if (data.success) return data.users;
+                return null;
             } catch (e) {
                 console.error('Failed to fetch users:', e);
                 return null;
@@ -1000,28 +991,30 @@
             btn.textContent = '驗證中...';
             errorEl.textContent = '';
 
-            const users = await fetchUsers();
-            btn.disabled = false;
-            btn.textContent = '登入';
+            try {
+                const url = getAuthScriptUrl() + '?action=login&account=' + encodeURIComponent(account) + '&password=' + encodeURIComponent(password);
+                const res = await fetch(url, { redirect: 'follow' });
+                const data = await res.json();
 
-            if (!users) {
+                btn.disabled = false;
+                btn.textContent = '登入';
+
+                if (data.success) {
+                    currentUser = { account: data.account, role: data.role || 'user' };
+                    sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
+                    applyLogin();
+                } else {
+                    errorEl.textContent = data.error || '帳號或密碼錯誤';
+                }
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = '登入';
                 errorEl.textContent = '無法連線至帳號資料庫，請稍後再試';
-                return;
             }
-
-            const found = users.find(u => String(u.account) === account && String(u.password) === password);
-            if (!found) {
-                errorEl.textContent = '帳號或密碼錯誤';
-                return;
-            }
-
-            currentUser = { account: found.account, role: found.role || 'user' };
-            sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
-            applyLogin();
         }
 
         function guestLogin() {
-            currentUser = { account: '訪客', role: 'guest' };
+            currentUser = { account: '主管', role: 'guest' };
             sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
             applyLogin();
         }
@@ -1041,7 +1034,7 @@
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('mainContainer').style.display = '';
 
-            const roleLabels = { admin: '管理員', user: '一般人員', guest: '訪客' };
+            const roleLabels = { admin: '管理員', user: '一般人員', guest: '主管' };
             document.getElementById('userDisplay').textContent = currentUser.account;
             document.getElementById('userRole').textContent = roleLabels[currentUser.role] || currentUser.role;
 
@@ -1059,7 +1052,7 @@
             const tbody = document.getElementById('userListBody');
             if (!users) { tbody.innerHTML = '<tr><td colspan="3">無法載入</td></tr>'; return; }
 
-            const roleLabels = { admin: '管理員', user: '一般人員', guest: '訪客' };
+            const roleLabels = { admin: '管理員', user: '一般人員', guest: '主管' };
             tbody.innerHTML = users.map(u => `
                 <tr>
                     <td>${u.account}</td>
