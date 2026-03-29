@@ -1242,23 +1242,98 @@
         }
 
         // ======================== 讀取和渲染排程數據 ========================
-        function loadAndRenderScheduleData() {
+        const HR_SHEET_URL = 'https://script.google.com/macros/s/AKfycby0oIervhkmGpopOo12Bd43OuuMVc5T5kIPAA_QqZDwVU-M-QAN-86VlUeCZo5r-eoB6Q/exec';
+        function getActivePersonnelCount() {
+            try {
+                const stored = JSON.parse(localStorage.getItem('ndt_activePersonnel') || 'null');
+                if (stored && stored.length > 0) return stored.length;
+            } catch(e) {}
+            return 40; // fallback
+        }
+
+        function getWeekRanges() {
+            const today = new Date();
+            const day = today.getDay();
+            const thisMonday = new Date(today);
+            thisMonday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+            const thisSunday = new Date(thisMonday);
+            thisSunday.setDate(thisMonday.getDate() + 6);
+            const nextMonday = new Date(thisSunday);
+            nextMonday.setDate(thisSunday.getDate() + 1);
+            const nextSunday = new Date(nextMonday);
+            nextSunday.setDate(nextMonday.getDate() + 6);
+            const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+            return {
+                thisWeek: { start: fmt(thisMonday), end: fmt(thisSunday) },
+                nextWeek: { start: fmt(nextMonday), end: fmt(nextSunday) }
+            };
+        }
+
+        function buildScheduleData(assignments, weekRange, title, totalPersonnel) {
+            const jobs = [];
+            const persons = new Set();
+            assignments.forEach(a => {
+                if (a.start && a.end && a.start <= weekRange.end && a.end >= weekRange.start) {
+                    persons.add(a.person);
+                    const existing = jobs.find(j => j.category === a.category && j.note === a.note && j.start === a.start && j.end === a.end);
+                    if (existing) {
+                        if (existing.persons.indexOf(a.person) === -1) existing.persons.push(a.person);
+                    } else {
+                        jobs.push({ category: a.category, note: a.note, start: a.start, end: a.end, persons: [a.person] });
+                    }
+                }
+            });
+            const total = totalPersonnel || getActivePersonnelCount();
+            return {
+                title: title,
+                itemCount: jobs.length,
+                jobs: jobs,
+                assignedPersons: Array.from(persons),
+                availablePersons: total - persons.size,
+                totalPersonnel: total,
+                dateRange: weekRange,
+                lastUpdated: new Date().toISOString(),
+                source: 'google_sheets'
+            };
+        }
+
+        function fetchAndRenderSchedule() {
+            const url = HR_SHEET_URL + '?action=getAllAssignments&t=' + Date.now();
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.assignments) {
+                        const ranges = getWeekRanges();
+                        const tp = data.totalPersonnel || getActivePersonnelCount();
+                        const thisWeekData = buildScheduleData(data.assignments, ranges.thisWeek, '本週排程', tp);
+                        const nextWeekData = buildScheduleData(data.assignments, ranges.nextWeek, '下週預定排程', tp);
+                        // 存入 localStorage（給其他頁面用）
+                        localStorage.setItem('scheduleData_thisWeek', JSON.stringify(thisWeekData));
+                        localStorage.setItem('scheduleData_nextWeek', JSON.stringify(nextWeekData));
+                        renderScheduleCard('thisWeek', thisWeekData);
+                        renderScheduleCard('nextWeek', nextWeekData);
+                        console.log('✅ 首頁排程已從雲端更新：本週 ' + thisWeekData.itemCount + ' 項，下週 ' + nextWeekData.itemCount + ' 項');
+                    }
+                })
+                .catch(err => {
+                    console.warn('首頁排程載入失敗，使用本地快取:', err);
+                    loadFromLocalCache();
+                });
+        }
+
+        function loadFromLocalCache() {
             const thisWeekDataStr = localStorage.getItem('scheduleData_thisWeek');
             const nextWeekDataStr = localStorage.getItem('scheduleData_nextWeek');
+            if (thisWeekDataStr) renderScheduleCard('thisWeek', JSON.parse(thisWeekDataStr));
+            else renderScheduleCardEmpty('thisWeek');
+            if (nextWeekDataStr) renderScheduleCard('nextWeek', JSON.parse(nextWeekDataStr));
+            else renderScheduleCardEmpty('nextWeek');
+        }
 
-            if (thisWeekDataStr) {
-                const thisWeekData = JSON.parse(thisWeekDataStr);
-                renderScheduleCard('thisWeek', thisWeekData);
-            } else {
-                renderScheduleCardEmpty('thisWeek');
-            }
-
-            if (nextWeekDataStr) {
-                const nextWeekData = JSON.parse(nextWeekDataStr);
-                renderScheduleCard('nextWeek', nextWeekData);
-            } else {
-                renderScheduleCardEmpty('nextWeek');
-            }
+        function loadAndRenderScheduleData() {
+            // 先顯示本地快取（避免空白），再從雲端更新
+            loadFromLocalCache();
+            fetchAndRenderSchedule();
         }
 
         function renderScheduleCard(week, data) {
