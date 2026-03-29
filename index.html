@@ -654,10 +654,121 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(102, 126, 234, 0.5);
         }
+
+        /* ======== Login Overlay ======== */
+        .login-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        .login-overlay.hidden { display: none; }
+        .login-box {
+            background: white;
+            border-radius: 16px;
+            padding: 2.5rem;
+            width: 380px;
+            max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .login-box .login-logo { font-size: 3rem; margin-bottom: 0.5rem; }
+        .login-box h2 { color: #0f172a; margin-bottom: 0.3rem; font-size: 1.5rem; }
+        .login-box .login-sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .login-box .input-field {
+            width: 100%; padding: 0.75rem 1rem; border: 2px solid #e2e8f0;
+            border-radius: 8px; font-size: 1rem; margin-bottom: 1rem;
+            outline: none; transition: border-color 0.2s;
+        }
+        .login-box .input-field:focus { border-color: #667eea; }
+        .login-box .login-btn {
+            width: 100%; padding: 0.8rem; border: none; border-radius: 8px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white; font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: opacity 0.2s;
+        }
+        .login-box .login-btn:hover { opacity: 0.9; }
+        .login-box .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .login-box .login-error {
+            color: #ef4444; font-size: 0.85rem; margin-top: 0.75rem; min-height: 1.2em;
+        }
+        .login-box .guest-link {
+            display: inline-block; margin-top: 1rem; color: #667eea;
+            font-size: 0.85rem; cursor: pointer; text-decoration: underline;
+        }
+        .login-box .guest-link:hover { color: #5568d3; }
+
+        /* ======== User Info in Header ======== */
+        .user-info {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.85rem; color: var(--text-secondary);
+        }
+        .user-info .user-role {
+            background: var(--primary); color: white;
+            padding: 2px 8px; border-radius: 10px; font-size: 0.75rem;
+        }
+        .user-info .logout-btn {
+            background: none; border: 1px solid var(--border);
+            padding: 4px 10px; border-radius: 6px; cursor: pointer;
+            font-size: 0.8rem; color: var(--text-secondary);
+        }
+        .user-info .logout-btn:hover { background: #fee2e2; color: #ef4444; border-color: #ef4444; }
+
+        /* ======== Admin Panel ======== */
+        .admin-panel {
+            background: white; border-radius: 12px; padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 1.5rem;
+        }
+        .admin-panel h3 { color: var(--primary); margin-bottom: 1rem; }
+        .admin-panel .admin-form { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .admin-panel .admin-form input, .admin-panel .admin-form select {
+            padding: 0.5rem 0.75rem; border: 1px solid var(--border);
+            border-radius: 6px; font-size: 0.9rem;
+        }
+        .admin-panel .admin-form button {
+            padding: 0.5rem 1rem; background: var(--primary); color: white;
+            border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+        }
+        .admin-panel .user-list-table {
+            width: 100%; border-collapse: collapse; font-size: 0.9rem;
+        }
+        .admin-panel .user-list-table th {
+            background: var(--bg-tertiary); padding: 0.6rem; text-align: left;
+            color: var(--primary); border-bottom: 2px solid var(--border);
+        }
+        .admin-panel .user-list-table td {
+            padding: 0.6rem; border-bottom: 1px solid var(--border);
+        }
+        .admin-panel .delete-user-btn {
+            background: #fee2e2; color: #ef4444; border: none;
+            padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+        }
+
+        /* Permission: hide elements for guests */
+        body.role-guest .needs-write { display: none !important; }
+        body.role-guest .needs-admin { display: none !important; }
+        body.role-user .needs-admin { display: none !important; }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Login Overlay -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-box">
+            <div class="login-logo">📊</div>
+            <h2>NDT 管理系統</h2>
+            <p class="login-sub">請輸入帳號密碼登入</p>
+            <input type="text" class="input-field" id="loginAccount" placeholder="帳號" autocomplete="username">
+            <input type="password" class="input-field" id="loginPassword" placeholder="密碼" autocomplete="current-password">
+            <button class="login-btn" id="loginBtn" onclick="doLogin()">登入</button>
+            <div class="login-error" id="loginError"></div>
+            <span class="guest-link" onclick="guestLogin()">以訪客身份瀏覽（僅供觀看）</span>
+        </div>
+    </div>
+
+    <div class="container" id="mainContainer" style="display:none;">
         <aside class="sidebar">
             <div class="sidebar-content">
                 <div class="logo">
@@ -671,28 +782,28 @@
                 <div class="nav-section">
                     <span class="nav-label">應用</span>
                     <div class="nav-items">
-                        <div class="nav-item active" onclick="switchApp('home', this)">
+                        <div class="nav-item active" data-app="home" onclick="switchApp('home', this)">
                             <div class="nav-icon">🏠</div>
                             <div class="nav-text">首頁</div>
                         </div>
-                        <div class="nav-item" onclick="switchApp('assignwork', this)">
+                        <div class="nav-item" data-app="assignwork" onclick="switchApp('assignwork', this)">
                             <div class="nav-icon">📋</div>
                             <div class="nav-text">工作分配</div>
                             <div class="nav-badge">3</div>
                         </div>
-                        <div class="nav-item" onclick="switchApp('schedule', this)">
+                        <div class="nav-item" data-app="schedule" onclick="switchApp('schedule', this)">
                             <div class="nav-icon">📅</div>
                             <div class="nav-text">停機排程</div>
                         </div>
-                        <div class="nav-item" onclick="switchApp('housing', this)">
+                        <div class="nav-item" data-app="housing" onclick="switchApp('housing', this)">
                             <div class="nav-icon">🏨</div>
                             <div class="nav-text">住宿預估</div>
                         </div>
-                        <div class="nav-item" onclick="switchApp('hr', this)">
+                        <div class="nav-item" data-app="hr" onclick="switchApp('hr', this)">
                             <div class="nav-icon">👥</div>
                             <div class="nav-text">人資摘要</div>
                         </div>
-                        <div class="nav-item" onclick="switchApp('quote', this)">
+                        <div class="nav-item" data-app="quote" onclick="switchApp('quote', this)">
                             <div class="nav-icon">💰</div>
                             <div class="nav-text">檢測報價</div>
                         </div>
@@ -736,6 +847,11 @@
                 <div class="topbar-right">
                     <button class="icon-button" onclick="showAlert('通知功能開發中...')">🔔</button>
                     <button class="icon-button" onclick="showAlert('搜尋功能開發中...')">🔍</button>
+                    <div class="user-info" id="userInfo">
+                        <span id="userDisplay"></span>
+                        <span class="user-role" id="userRole"></span>
+                        <button class="logout-btn" onclick="doLogout()">登出</button>
+                    </div>
                 </div>
             </header>
 
@@ -771,41 +887,60 @@
                     <div class="apps-section">
                         <h3>🚀 快速訪問應用</h3>
                         <div class="apps-grid">
-                            <div class="app-card" onclick="switchApp('assignwork', document.querySelector('[onclick=\"switchApp(\\\"assignwork\\\", this)\"]'))">
+                            <div class="app-card" onclick="cardNavigate('assignwork')">
                                 <div class="app-icon">📋</div>
                                 <div class="app-name">工作分配系統</div>
                                 <div class="app-description">管理和分配 NDT 檢測工作任務，追蹤人員編制和工作進度。</div>
-                                <a href="#" class="app-link">進入應用 →</a>
+                                <span class="app-link">進入應用 →</span>
                             </div>
 
-                            <div class="app-card" onclick="switchApp('schedule', document.querySelector('[onclick=\"switchApp(\\\"schedule\\\", this)\"]'))">
+                            <div class="app-card" onclick="cardNavigate('schedule')">
                                 <div class="app-icon">📅</div>
                                 <div class="app-name">停機檢修排程</div>
                                 <div class="app-description">查看和管理各電廠的停機檢修排程，規劃檢測日程。</div>
-                                <a href="#" class="app-link">進入應用 →</a>
+                                <span class="app-link">進入應用 →</span>
                             </div>
 
-                            <div class="app-card" onclick="switchApp('housing', document.querySelector('[onclick=\"switchApp(\\\"housing\\\", this)\"]'))">
+                            <div class="app-card" onclick="cardNavigate('housing')">
                                 <div class="app-icon">🏨</div>
                                 <div class="app-name">住宿需求預估</div>
                                 <div class="app-description">計算出差檢測人員的住宿日數和所需房間數量。</div>
-                                <a href="#" class="app-link">進入應用 →</a>
+                                <span class="app-link">進入應用 →</span>
                             </div>
 
-                            <div class="app-card" onclick="switchApp('hr', document.querySelector('[onclick=\"switchApp(\\\"hr\\\", this)\"]'))">
+                            <div class="app-card" onclick="cardNavigate('hr')">
                                 <div class="app-icon">👥</div>
                                 <div class="app-name">人資摘要系統</div>
                                 <div class="app-description">查看團隊成員資訊、績效評估和人力資源統計。</div>
-                                <a href="#" class="app-link">進入應用 →</a>
+                                <span class="app-link">進入應用 →</span>
                             </div>
 
-                            <div class="app-card" onclick="switchApp('quote', document.querySelector('[onclick=\"switchApp(\\\"quote\\\", this)\"]'))">
+                            <div class="app-card" onclick="cardNavigate('quote')">
                                 <div class="app-icon">💰</div>
                                 <div class="app-name">檢測報價系統</div>
                                 <div class="app-description">查詢和分析 NDT 檢測報價，管理派工統計和檢測成本。</div>
-                                <a href="#" class="app-link">進入應用 →</a>
+                                <span class="app-link">進入應用 →</span>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Admin Panel: only visible to admin -->
+                    <div class="admin-panel needs-admin" id="adminPanel">
+                        <h3>帳號管理（管理員專用）</h3>
+                        <div class="admin-form">
+                            <input type="text" id="newAccount" placeholder="新帳號">
+                            <input type="password" id="newPassword" placeholder="密碼">
+                            <select id="newRole">
+                                <option value="user">一般人員</option>
+                                <option value="admin">管理員</option>
+                            </select>
+                            <button onclick="addUser()">新增帳號</button>
+                        </div>
+                        <div id="adminMsg" style="font-size:0.85rem; margin-bottom:0.5rem; min-height:1.2em;"></div>
+                        <table class="user-list-table" id="userListTable">
+                            <thead><tr><th>帳號</th><th>權限</th><th>操作</th></tr></thead>
+                            <tbody id="userListBody"></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -820,6 +955,196 @@
     </div>
 
     <script>
+        // ======================== Auth System ========================
+        const AUTH_SHEET_ID = '1OENJ4A0iXW9E8OBx9sgt0JwfBWOFOaLP8PiolxOhjqo';
+        const AUTH_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + AUTH_SHEET_ID + '/gviz/tq?tqx=out:json';
+
+        let currentUser = null; // { account, role }
+
+        const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
+        function getAuthScriptUrl() {
+            return 'https://script.google.com/macros/s/' + AUTH_SCRIPT_URL + '/exec';
+        }
+
+        async function fetchUsers() {
+            try {
+                const res = await fetch(AUTH_CSV_URL);
+                const text = await res.text();
+                // Parse Google Visualization JSON response
+                const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
+                const rows = json.table.rows;
+                const cols = json.table.cols;
+                return rows.map(r => ({
+                    account: r.c[0] ? String(r.c[0].v) : '',
+                    password: r.c[1] ? String(r.c[1].v) : '',
+                    role: r.c[2] ? String(r.c[2].v) : 'user'
+                })).filter(u => u.account);
+            } catch (e) {
+                console.error('Failed to fetch users:', e);
+                return null;
+            }
+        }
+
+        async function doLogin() {
+            const account = document.getElementById('loginAccount').value.trim();
+            const password = document.getElementById('loginPassword').value.trim();
+            const errorEl = document.getElementById('loginError');
+            const btn = document.getElementById('loginBtn');
+
+            if (!account || !password) {
+                errorEl.textContent = '請輸入帳號和密碼';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '驗證中...';
+            errorEl.textContent = '';
+
+            const users = await fetchUsers();
+            btn.disabled = false;
+            btn.textContent = '登入';
+
+            if (!users) {
+                errorEl.textContent = '無法連線至帳號資料庫，請稍後再試';
+                return;
+            }
+
+            const found = users.find(u => String(u.account) === account && String(u.password) === password);
+            if (!found) {
+                errorEl.textContent = '帳號或密碼錯誤';
+                return;
+            }
+
+            currentUser = { account: found.account, role: found.role || 'user' };
+            sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
+            applyLogin();
+        }
+
+        function guestLogin() {
+            currentUser = { account: '訪客', role: 'guest' };
+            sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
+            applyLogin();
+        }
+
+        function doLogout() {
+            currentUser = null;
+            sessionStorage.removeItem('ndtUser');
+            document.getElementById('mainContainer').style.display = 'none';
+            document.getElementById('loginOverlay').classList.remove('hidden');
+            document.body.className = '';
+            document.getElementById('loginAccount').value = '';
+            document.getElementById('loginPassword').value = '';
+            document.getElementById('loginError').textContent = '';
+        }
+
+        function applyLogin() {
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('mainContainer').style.display = '';
+
+            const roleLabels = { admin: '管理員', user: '一般人員', guest: '訪客' };
+            document.getElementById('userDisplay').textContent = currentUser.account;
+            document.getElementById('userRole').textContent = roleLabels[currentUser.role] || currentUser.role;
+
+            // Apply role class to body for CSS-based permission
+            document.body.className = 'role-' + currentUser.role;
+
+            // If admin, load user list
+            if (currentUser.role === 'admin') {
+                loadUserList();
+            }
+        }
+
+        async function loadUserList() {
+            const users = await fetchUsers();
+            const tbody = document.getElementById('userListBody');
+            if (!users) { tbody.innerHTML = '<tr><td colspan="3">無法載入</td></tr>'; return; }
+
+            const roleLabels = { admin: '管理員', user: '一般人員', guest: '訪客' };
+            tbody.innerHTML = users.map(u => `
+                <tr>
+                    <td>${u.account}</td>
+                    <td>${roleLabels[u.role] || u.role}</td>
+                    <td>${u.account === currentUser.account ? '（目前帳號）' : '<button class="delete-user-btn" onclick="deleteUser(\'' + u.account + '\')">刪除</button>'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function addUser() {
+            const account = document.getElementById('newAccount').value.trim();
+            const password = document.getElementById('newPassword').value.trim();
+            const role = document.getElementById('newRole').value;
+            const msg = document.getElementById('adminMsg');
+
+            if (!account || !password) { msg.textContent = '請輸入帳號和密碼'; msg.style.color = '#ef4444'; return; }
+
+            const url = getAuthScriptUrl();
+            if (!url) { msg.textContent = '未設定 Apps Script URL'; msg.style.color = '#ef4444'; return; }
+
+            msg.textContent = '新增中...'; msg.style.color = '#64748b';
+            try {
+                const res = await fetch(url, {
+                    method: 'POST', redirect: 'follow',
+                    body: JSON.stringify({ action: 'add', account, password, role })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    msg.textContent = '已新增帳號: ' + account; msg.style.color = '#10b981';
+                    document.getElementById('newAccount').value = '';
+                    document.getElementById('newPassword').value = '';
+                    loadUserList();
+                } else {
+                    msg.textContent = data.error || '新增失敗'; msg.style.color = '#ef4444';
+                }
+            } catch (e) {
+                msg.textContent = '連線失敗: ' + e.message; msg.style.color = '#ef4444';
+            }
+        }
+
+        async function deleteUser(account) {
+            if (!confirm('確定要刪除帳號「' + account + '」嗎？')) return;
+            const url = getAuthScriptUrl();
+            if (!url) return;
+            const msg = document.getElementById('adminMsg');
+            msg.textContent = '刪除中...'; msg.style.color = '#64748b';
+            try {
+                const res = await fetch(url, {
+                    method: 'POST', redirect: 'follow',
+                    body: JSON.stringify({ action: 'delete', account })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    msg.textContent = '已刪除帳號: ' + account; msg.style.color = '#10b981';
+                    loadUserList();
+                } else {
+                    msg.textContent = data.error || '刪除失敗'; msg.style.color = '#ef4444';
+                }
+            } catch (e) {
+                msg.textContent = '連線失敗: ' + e.message; msg.style.color = '#ef4444';
+            }
+        }
+
+        // Auto-login from session
+        (function checkSession() {
+            const saved = sessionStorage.getItem('ndtUser');
+            if (saved) {
+                try {
+                    currentUser = JSON.parse(saved);
+                    applyLogin();
+                } catch(e) { /* ignore */ }
+            }
+        })();
+
+        // Enter key to login
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('loginPassword').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') doLogin();
+            });
+            document.getElementById('loginAccount').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') document.getElementById('loginPassword').focus();
+            });
+        });
+
+        // ======================== App Config ========================
         const APP_CONFIG = {
             home: {
                 name: '首頁',
@@ -860,6 +1185,11 @@
         };
 
         let currentApp = 'home';
+
+        function cardNavigate(appId) {
+            const navItem = document.querySelector('.nav-item[data-app="' + appId + '"]');
+            switchApp(appId, navItem);
+        }
 
         function switchApp(appId, element) {
             if (!APP_CONFIG[appId]) return;
