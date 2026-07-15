@@ -795,6 +795,10 @@
                             <div class="nav-icon">📅</div>
                             <div class="nav-text">停機排程</div>
                         </div>
+                        <div class="nav-item" data-app="outagehr" onclick="switchApp('outagehr', this)">
+                            <div class="nav-icon">🔧</div>
+                            <div class="nav-text">大修人力</div>
+                        </div>
                         <div class="nav-item" data-app="housing" onclick="switchApp('housing', this)">
                             <div class="nav-icon">🏨</div>
                             <div class="nav-text">住宿預估</div>
@@ -898,6 +902,13 @@
                                 <div class="app-icon">📅</div>
                                 <div class="app-name">停機檢修排程</div>
                                 <div class="app-description">查看和管理各電廠的停機檢修排程，規劃檢測日程。</div>
+                                <span class="app-link">進入應用 →</span>
+                            </div>
+
+                            <div class="app-card" onclick="cardNavigate('outagehr')">
+                                <div class="app-icon">🔧</div>
+                                <div class="app-name">大修支援派工</div>
+                                <div class="app-description">規劃機組大修期間的支援人員派工，以甘特圖檢視人力與成本。</div>
                                 <span class="app-link">進入應用 →</span>
                             </div>
 
@@ -1155,6 +1166,12 @@
                 name: '停機排程',
                 icon: '📅',
                 url: 'https://aomtne.github.io/Outage-Schedule/index.html',
+                isExternal: true
+            },
+            outagehr: {
+                name: '大修人力',
+                icon: '🔧',
+                url: 'https://aomtne.github.io/Outage-Human-Source/',
                 isExternal: true
             },
             housing: {
