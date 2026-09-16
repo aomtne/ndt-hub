@@ -799,6 +799,10 @@
                             <div class="nav-icon">🔧</div>
                             <div class="nav-text">大修人力</div>
                         </div>
+                        <div class="nav-item" data-app="outagecost" onclick="switchApp('outagecost', this)">
+                            <div class="nav-icon">💹</div>
+                            <div class="nav-text">大修成本</div>
+                        </div>
                         <div class="nav-item" data-app="housing" onclick="switchApp('housing', this)">
                             <div class="nav-icon">🏨</div>
                             <div class="nav-text">住宿預估</div>
@@ -909,6 +913,13 @@
                                 <div class="app-icon">🔧</div>
                                 <div class="app-name">大修支援派工</div>
                                 <div class="app-description">規劃機組大修期間的支援人員派工，以甘特圖檢視人力與成本。</div>
+                                <span class="app-link">進入應用 →</span>
+                            </div>
+
+                            <div class="app-card" onclick="cardNavigate('outagecost')">
+                                <div class="app-icon">💹</div>
+                                <div class="app-name">大修成本追蹤</div>
+                                <div class="app-description">依工號追蹤大修檢測成本，比對預算、已支用與規劃金額，掌握超支風險。</div>
                                 <span class="app-link">進入應用 →</span>
                             </div>
 
@@ -1172,6 +1183,12 @@
                 name: '大修人力',
                 icon: '🔧',
                 url: 'https://aomtne.github.io/Outage-Human-Source/',
+                isExternal: true
+            },
+            outagecost: {
+                name: '大修成本',
+                icon: '💹',
+                url: 'https://aomtne.github.io/Outage-Cost/',
                 isExternal: true
             },
             housing: {
