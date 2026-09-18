@@ -757,6 +757,7 @@
             color: #94a3b8; cursor: pointer;
         }
         .login-box .setup-link:hover { color: #667eea; }
+        .login-box .login-ver { margin-top: 0.8rem; font-size: 0.7rem; color: #cbd5e1; letter-spacing: 0.02em; }
         .login-box .setup-panel { display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
         .login-box .setup-panel.open { display: block; }
         .login-box .setup-panel .setup-note {
@@ -800,6 +801,7 @@
             <div class="login-error" id="loginError"></div>
             <span class="guest-link" onclick="guestLogin()">以主管身份瀏覽</span>
             <span class="setup-link" onclick="toggleSetup()">首次設定 / 重設管理員</span>
+            <div class="login-ver" id="loginVer"></div>
             <div class="setup-panel" id="setupPanel">
                 <p class="setup-note">設定碼寫在 Auth.gs 最上方的 SETUP_CODE。忘記管理員密碼時也從這裡重設。</p>
                 <input type="text" class="input-field" id="setupCode" placeholder="設定碼" autocomplete="off">
@@ -1045,6 +1047,7 @@
         let sessionKey  = null;
 
         const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
+        const APP_VERSION = 'v3.2 (2026-09-18)';   // 改版時更新，用來確認瀏覽器載到的是哪一版
         const SESSION_KEY = 'ndtSession';
         const SESSION_HOURS = 12;
         const MIN_PWD = 6;          // 密碼長度下限
@@ -1371,6 +1374,8 @@
         })();
 
         document.addEventListener('DOMContentLoaded', function () {
+            document.getElementById('loginVer').textContent = APP_VERSION;
+            console.log('NDT 管理系統 ' + APP_VERSION);
             if (!currentUser) warmUpAuth();
             ['loginAccount', 'loginPassword'].forEach(function (id) {
                 document.getElementById(id).addEventListener('focus', warmUpAuth, { once: true });
