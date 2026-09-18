@@ -804,7 +804,7 @@
                 <p class="setup-note">設定碼寫在 Auth.gs 最上方的 SETUP_CODE。忘記管理員密碼時也從這裡重設。</p>
                 <input type="text" class="input-field" id="setupCode" placeholder="設定碼" autocomplete="off">
                 <input type="text" class="input-field" id="setupAccount" placeholder="管理員帳號" value="admin" autocomplete="off">
-                <input type="password" class="input-field" id="setupPassword" placeholder="管理員密碼" autocomplete="new-password">
+                <input type="password" class="input-field" id="setupPassword" placeholder="管理員密碼（6～12 字元）" maxlength="12" autocomplete="new-password">
                 <button class="login-btn" id="setupBtn" onclick="doSetup()">建立管理員</button>
                 <div class="login-error" id="setupMsg"></div>
             </div>
@@ -816,7 +816,7 @@
         <div class="pwd-box">
             <h3>修改密碼</h3>
             <input type="password" class="input-field" id="pwdOld" placeholder="目前密碼" autocomplete="current-password">
-            <input type="password" class="input-field" id="pwdNew" placeholder="新密碼（至少 6 字元）" autocomplete="new-password">
+            <input type="password" class="input-field" id="pwdNew" placeholder="新密碼（6～12 字元）" maxlength="12" autocomplete="new-password">
             <div class="pwd-actions">
                 <button class="ghost" onclick="closeChangePwd()">取消</button>
                 <button class="primary" id="pwdBtn" onclick="submitChangePwd()">更新密碼</button>
@@ -1009,7 +1009,7 @@
                         <h3>帳號管理（管理員專用）</h3>
                         <div class="admin-form">
                             <input type="text" id="newAccount" placeholder="新帳號">
-                            <input type="password" id="newPassword" placeholder="密碼">
+                            <input type="password" id="newPassword" placeholder="密碼（6～12 字元）" maxlength="12">
                             <select id="newRole">
                                 <option value="user">一般人員</option>
                                 <option value="admin">管理員</option>
@@ -1047,10 +1047,19 @@
         const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
         const SESSION_KEY = 'ndtSession';
         const SESSION_HOURS = 12;
-        const MIN_PWD = 6;          // 密碼最短長度，改這裡就會套用到登入、新增帳號、改密碼
+        const MIN_PWD = 6;          // 密碼長度下限
+        const MAX_PWD = 12;         // 密碼長度上限；改這兩個數字就會套用到建立管理員、新增帳號、改密碼
 
         function getAuthScriptUrl() {
             return 'https://script.google.com/macros/s/' + AUTH_SCRIPT_URL + '/exec';
+        }
+
+        // 密碼長度檢查，三個地方共用
+        function pwdLengthError(pwd) {
+            if (pwd.length < MIN_PWD || pwd.length > MAX_PWD) {
+                return '密碼長度需為 ' + MIN_PWD + '～' + MAX_PWD + ' 個字元';
+            }
+            return '';
         }
 
         // 一次 SHA-256，約 1 ms。account 當 salt，同密碼在不同帳號結果不同。
@@ -1181,7 +1190,8 @@
             const btn      = document.getElementById('setupBtn');
 
             if (!code || !account || !password) { msg.textContent = '三個欄位都要填'; return; }
-            if (password.length < MIN_PWD) { msg.textContent = '密碼至少 ' + MIN_PWD + ' 個字元'; return; }
+            const setupErr = pwdLengthError(password);
+            if (setupErr) { msg.style.color = '#ef4444'; msg.textContent = setupErr; return; }
 
             btn.disabled = true; btn.textContent = '建立中...'; msg.textContent = '';
             try {
@@ -1225,7 +1235,8 @@
             const btn    = document.getElementById('pwdBtn');
 
             if (!oldPwd || !newPwd) { msg.style.color = '#ef4444'; msg.textContent = '兩個欄位都要填'; return; }
-            if (newPwd.length < MIN_PWD)  { msg.style.color = '#ef4444'; msg.textContent = '新密碼至少 ' + MIN_PWD + ' 個字元'; return; }
+            const newErr = pwdLengthError(newPwd);
+            if (newErr) { msg.style.color = '#ef4444'; msg.textContent = newErr; return; }
 
             btn.disabled = true; btn.textContent = '更新中...'; msg.textContent = '';
             try {
@@ -1253,13 +1264,19 @@
         /* -------------------- 帳號管理（需管理員） -------------------- */
         async function loadUserList() {
             const tbody = document.getElementById('userListBody');
-            let users = null;
+            let users = null, why = '';
             try {
                 const data = await api({ action: 'list', sessionKey: sessionKey }, 12000);
                 if (data.success) users = data.users;
-            } catch (e) { /* 下面統一處理 */ }
+                else why = data.error || '後端未回傳清單';
+            } catch (e) {
+                why = (e.name === 'AbortError') ? '伺服器忙碌，請重新整理' : e.message;
+            }
 
-            if (!users) { tbody.innerHTML = '<tr><td colspan="3">無法載入</td></tr>'; return; }
+            if (!users) {
+                tbody.innerHTML = '<tr><td colspan="3">' + why + '</td></tr>';
+                return;
+            }
 
             const roleLabels = { admin: '管理員', user: '一般人員' };
             tbody.innerHTML = users.map(u => `
@@ -1279,7 +1296,8 @@
             const msg     = document.getElementById('adminMsg');
 
             if (!account || !password) { msg.style.color = '#ef4444'; msg.textContent = '請輸入帳號和密碼'; return; }
-            if (password.length < MIN_PWD)   { msg.style.color = '#ef4444'; msg.textContent = '密碼至少 ' + MIN_PWD + ' 個字元'; return; }
+            const addErr = pwdLengthError(password);
+            if (addErr) { msg.style.color = '#ef4444'; msg.textContent = addErr; return; }
 
             msg.style.color = '#64748b'; msg.textContent = '新增中...';
             try {
