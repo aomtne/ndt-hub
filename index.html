@@ -985,12 +985,33 @@
             return 'https://script.google.com/macros/s/' + AUTH_SCRIPT_URL + '/exec';
         }
 
+        // 帶逾時 + 暫時性錯誤重試的 fetch（避免 Apps Script 排隊時整頁卡死）
+        async function fetchJSON(url, opts, timeoutMs, retries) {
+            timeoutMs = timeoutMs || 12000;
+            retries = (retries === undefined) ? 1 : retries;
+            let lastErr;
+            for (let i = 0; i <= retries; i++) {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+                try {
+                    const res = await fetch(url, Object.assign({ redirect: 'follow', signal: ctrl.signal }, opts || {}));
+                    clearTimeout(timer);
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return await res.json();
+                } catch (e) {
+                    clearTimeout(timer);
+                    lastErr = e;
+                    if (i < retries) await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000));
+                }
+            }
+            throw lastErr;
+        }
+
         async function fetchUsers() {
             try {
                 const url = getAuthScriptUrl() + '?action=list';
-                const res = await fetch(url, { redirect: 'follow' });
-                const data = await res.json();
-                if (data.success) return data.users;
+                const data = await fetchJSON(url);
+                if (data && data.success) return data.users;
                 return null;
             } catch (e) {
                 console.error('Failed to fetch users:', e);
@@ -1014,9 +1035,11 @@
             errorEl.textContent = '';
 
             try {
+                // 維持原本的 GET 介面（Auth 腳本的 doPost 目前只處理 add/delete），
+                // 但加上 15 秒逾時 + 一次重試，避免 Apps Script 排隊時整個登入畫面卡死。
+                // 若要把密碼改走 POST（建議），見交付說明中的 Auth 腳本補丁。
                 const url = getAuthScriptUrl() + '?action=login&account=' + encodeURIComponent(account) + '&password=' + encodeURIComponent(password);
-                const res = await fetch(url, { redirect: 'follow' });
-                const data = await res.json();
+                const data = await fetchJSON(url, null, 15000, 1);
 
                 btn.disabled = false;
                 btn.textContent = '登入';
@@ -1031,7 +1054,9 @@
             } catch (e) {
                 btn.disabled = false;
                 btn.textContent = '登入';
-                errorEl.textContent = '無法連線至帳號資料庫，請稍後再試';
+                errorEl.textContent = (e.name === 'AbortError')
+                    ? '伺服器忙碌（逾時），請再按一次登入'
+                    : '無法連線至帳號資料庫，請稍後再試';
             }
         }
 
@@ -1241,12 +1266,21 @@
                 homeView.style.display = 'none';
                 iframeContainer.classList.add('active');
 
-                showLoading(true);
-                iframeContainer.innerHTML = `<iframe src="${config.url}"></iframe>`;
-
-                const iframe = iframeContainer.querySelector('iframe');
-                iframe.onload = () => showLoading(false);
-                setTimeout(() => showLoading(false), 3000);
+                // 每個子系統只建立一次 iframe，之後切換只做顯示/隱藏（避免重載＝重打 Apps Script）
+                iframeContainer.querySelectorAll('iframe').forEach(f => { f.style.display = 'none'; });
+                let iframe = iframeContainer.querySelector('iframe[data-app="' + appId + '"]');
+                if (!iframe) {
+                    showLoading(true);
+                    iframe = document.createElement('iframe');
+                    iframe.dataset.app = appId;
+                    iframe.src = config.url;
+                    iframe.onload = () => showLoading(false);
+                    setTimeout(() => showLoading(false), 8000);
+                    iframeContainer.appendChild(iframe);
+                } else {
+                    showLoading(false);
+                }
+                iframe.style.display = '';
             } else {
                 iframeContainer.classList.remove('active');
                 homeView.style.display = 'block';
@@ -1331,8 +1365,18 @@
             };
         }
 
-        function fetchAndRenderSchedule() {
-            const url = HR_SHEET_URL + '?action=getAllAssignments&t=' + Date.now();
+        let scheduleInFlight = false;
+        let scheduleLastFetch = 0;
+        const SCHEDULE_MIN_GAP = 5 * 60 * 1000;   // 兩次雲端讀取至少間隔 5 分鐘
+
+        function fetchAndRenderSchedule(force) {
+            const now = Date.now();
+            if (scheduleInFlight) return;                                    // 避免同時疊加請求
+            if (!force && now - scheduleLastFetch < SCHEDULE_MIN_GAP) return; // 避免短時間重複打
+            scheduleInFlight = true;
+            scheduleLastFetch = now;
+            // 不再加 &t= 破快取，讓 Apps Script 端的 CacheService 生效
+            const url = HR_SHEET_URL + '?action=getAllAssignments';
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
@@ -1352,7 +1396,8 @@
                 .catch(err => {
                     console.warn('首頁排程載入失敗，使用本地快取:', err);
                     loadFromLocalCache();
-                });
+                })
+                .finally(() => { scheduleInFlight = false; });
         }
 
         function loadFromLocalCache() {
@@ -1364,10 +1409,11 @@
             else renderScheduleCardEmpty('nextWeek');
         }
 
-        function loadAndRenderScheduleData() {
+        function loadAndRenderScheduleData(force) {
             // 先顯示本地快取（避免空白），再從雲端更新
             loadFromLocalCache();
-            fetchAndRenderSchedule();
+            if (document.hidden) return;   // 分頁在背景時不打雲端
+            fetchAndRenderSchedule(force);
         }
 
         function renderScheduleCard(week, data) {
@@ -1457,16 +1503,23 @@
             }
         }
 
+        // 其他分頁已經抓過資料了，這裡只重畫、絕不再 fetch
+        // （原本呼叫 loadAndRenderScheduleData() 會再寫 localStorage，兩個分頁會互相觸發成無限迴圈）
         window.addEventListener('storage', (event) => {
             if (event.key === 'scheduleData_thisWeek' || event.key === 'scheduleData_nextWeek') {
-                loadAndRenderScheduleData();
+                loadFromLocalCache();
             }
         });
 
         document.addEventListener('DOMContentLoaded', () => {
-            switchApp('home');
-            loadAndRenderScheduleData();
-            setInterval(loadAndRenderScheduleData, 5 * 60 * 1000);
+            switchApp('home');   // 內部已呼叫 loadAndRenderScheduleData()，這裡不再重複呼叫一次
+            setInterval(() => {
+                if (!document.hidden && currentApp === 'home') loadAndRenderScheduleData();
+            }, 15 * 60 * 1000);
+            // 分頁切回前景且資料已過期時才補抓一次
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden && currentApp === 'home') loadAndRenderScheduleData();
+            });
 
             document.addEventListener('click', (e) => {
                 const sidebar = document.querySelector('.sidebar');
