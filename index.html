@@ -1072,22 +1072,38 @@
         }
 
         // 不設 headers，字串 body 會是 text/plain，屬於 simple request，不會多一次 CORS preflight
-        async function api(payload, timeoutMs) {
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), timeoutMs || 15000);
-            try {
-                const res = await fetch(getAuthScriptUrl(), {
-                    method: 'POST', redirect: 'follow', signal: ctrl.signal,
-                    body: JSON.stringify(payload)
-                });
-                const text = await res.text();
-                if (!text.trim().startsWith('{')) {
-                    throw new Error('後端回應異常，請確認 Auth.gs 已部署新版本');
+        // 逾時會自動重試一次（Apps Script 冷啟動或排隊時常見），使用者不必自己按第二次
+        let lastApiMs = 0;
+        async function api(payload, timeoutMs, retries) {
+            timeoutMs = timeoutMs || 25000;
+            retries = (retries === undefined) ? 1 : retries;
+            const t0 = Date.now();
+            let lastErr;
+
+            for (let i = 0; i <= retries; i++) {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+                try {
+                    const res = await fetch(getAuthScriptUrl(), {
+                        method: 'POST', redirect: 'follow', signal: ctrl.signal,
+                        body: JSON.stringify(payload)
+                    });
+                    clearTimeout(timer);
+                    lastApiMs = Date.now() - t0;
+                    const text = await res.text();
+                    if (!text.trim().startsWith('{')) {
+                        throw new Error('後端回應異常（HTTP ' + res.status + '），請確認 Auth.gs 已部署新版本');
+                    }
+                    return JSON.parse(text);
+                } catch (e) {
+                    clearTimeout(timer);
+                    lastErr = e;
+                    if (e.name !== 'AbortError') break;      // 非逾時的錯誤不重試
+                    if (i < retries) await new Promise(r => setTimeout(r, 800));
                 }
-                return JSON.parse(text);
-            } finally {
-                clearTimeout(timer);
             }
+            lastApiMs = Date.now() - t0;
+            throw lastErr;
         }
 
         // 預熱：使用者打字時就把 Apps Script 容器叫醒，冷啟動不落在登入路徑上
@@ -1136,9 +1152,13 @@
                     errorEl.textContent = data.error || '帳號或密碼錯誤';
                 }
             } catch (e) {
-                errorEl.textContent = (e.name === 'AbortError')
-                    ? '伺服器忙碌，請再按一次登入'
-                    : (e.message === 'NO_WEBCRYPTO' ? '請改用新版 Chrome 或 Edge' : e.message);
+                if (e.name === 'AbortError') {
+                    errorEl.textContent = '後端沒有回應（已等 ' + Math.round(lastApiMs / 1000) + ' 秒並重試一次）';
+                } else if (e.message === 'NO_WEBCRYPTO') {
+                    errorEl.textContent = '請改用新版 Chrome 或 Edge';
+                } else {
+                    errorEl.textContent = e.message;
+                }
             } finally {
                 btn.disabled = false; btn.textContent = '登入';
             }
