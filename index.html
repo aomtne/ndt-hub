@@ -816,7 +816,7 @@
         <div class="pwd-box">
             <h3>修改密碼</h3>
             <input type="password" class="input-field" id="pwdOld" placeholder="目前密碼" autocomplete="current-password">
-            <input type="password" class="input-field" id="pwdNew" placeholder="新密碼（至少 8 字元）" autocomplete="new-password">
+            <input type="password" class="input-field" id="pwdNew" placeholder="新密碼（至少 6 字元）" autocomplete="new-password">
             <div class="pwd-actions">
                 <button class="ghost" onclick="closeChangePwd()">取消</button>
                 <button class="primary" id="pwdBtn" onclick="submitChangePwd()">更新密碼</button>
@@ -1047,6 +1047,7 @@
         const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
         const SESSION_KEY = 'ndtSession';
         const SESSION_HOURS = 12;
+        const MIN_PWD = 6;          // 密碼最短長度，改這裡就會套用到登入、新增帳號、改密碼
 
         function getAuthScriptUrl() {
             return 'https://script.google.com/macros/s/' + AUTH_SCRIPT_URL + '/exec';
@@ -1180,7 +1181,7 @@
             const btn      = document.getElementById('setupBtn');
 
             if (!code || !account || !password) { msg.textContent = '三個欄位都要填'; return; }
-            if (password.length < 8) { msg.textContent = '密碼至少 8 個字元'; return; }
+            if (password.length < MIN_PWD) { msg.textContent = '密碼至少 ' + MIN_PWD + ' 個字元'; return; }
 
             btn.disabled = true; btn.textContent = '建立中...'; msg.textContent = '';
             try {
@@ -1224,7 +1225,7 @@
             const btn    = document.getElementById('pwdBtn');
 
             if (!oldPwd || !newPwd) { msg.style.color = '#ef4444'; msg.textContent = '兩個欄位都要填'; return; }
-            if (newPwd.length < 8)  { msg.style.color = '#ef4444'; msg.textContent = '新密碼至少 8 個字元'; return; }
+            if (newPwd.length < MIN_PWD)  { msg.style.color = '#ef4444'; msg.textContent = '新密碼至少 ' + MIN_PWD + ' 個字元'; return; }
 
             btn.disabled = true; btn.textContent = '更新中...'; msg.textContent = '';
             try {
@@ -1278,7 +1279,7 @@
             const msg     = document.getElementById('adminMsg');
 
             if (!account || !password) { msg.style.color = '#ef4444'; msg.textContent = '請輸入帳號和密碼'; return; }
-            if (password.length < 8)   { msg.style.color = '#ef4444'; msg.textContent = '密碼至少 8 個字元'; return; }
+            if (password.length < MIN_PWD)   { msg.style.color = '#ef4444'; msg.textContent = '密碼至少 ' + MIN_PWD + ' 個字元'; return; }
 
             msg.style.color = '#64748b'; msg.textContent = '新增中...';
             try {
