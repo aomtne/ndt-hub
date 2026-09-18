@@ -978,50 +978,114 @@
 
     <script>
         // ======================== Auth System ========================
+        // 安全模型：
+        //   1. 明文密碼永遠不離開這台電腦 —— 先用 PBKDF2-SHA256 (150k 次) 推導成 authKey 再送出。
+        //   2. 一律走 POST，密碼衍生值不會出現在網址、瀏覽器歷史或 Apps Script 執行紀錄。
+        //   3. 伺服器只存 SHA256(authKey + 伺服器 pepper)，試算表外洩也無法反推密碼。
+        //   4. 登入成功拿到 HMAC 簽章的 token，12 小時內回訪完全不連網。
         let currentUser = null; // { account, role }
+        let authToken = null;
 
         const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
         function getAuthScriptUrl() {
             return 'https://script.google.com/macros/s/' + AUTH_SCRIPT_URL + '/exec';
         }
 
-        // 帶逾時 + 暫時性錯誤重試的 fetch（避免 Apps Script 排隊時整頁卡死）
-        async function fetchJSON(url, opts, timeoutMs, retries) {
-            timeoutMs = timeoutMs || 12000;
+        // 這兩個常數必須與 Auth.gs 註解中的設定一致，改動等同於讓所有密碼失效
+        const PWD_SALT_PREFIX = 'ndt-portal-v1';
+        const PWD_ITERATIONS  = 150000;
+        const SESSION_KEY     = 'ndtSession';
+
+        // ---------- 密碼推導 ----------
+        async function deriveAuthKey(account, password) {
+            if (!window.crypto || !crypto.subtle) throw new Error('NO_WEBCRYPTO');
+            const enc = new TextEncoder();
+            const material = await crypto.subtle.importKey(
+                'raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+            const bits = await crypto.subtle.deriveBits({
+                name: 'PBKDF2',
+                salt: enc.encode(PWD_SALT_PREFIX + '|' + account.trim().toLowerCase()),
+                iterations: PWD_ITERATIONS,
+                hash: 'SHA-256'
+            }, material, 256);
+            return Array.from(new Uint8Array(bits))
+                        .map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // ---------- 連線 ----------
+        // 注意：不要自行設定 headers，字串 body 會是 text/plain，屬於 simple request，
+        // 才不會多一次 CORS preflight（多一次 = 多一趟 Apps Script 冷啟動）。
+        async function authRequest(payload, timeoutMs, retries) {
+            timeoutMs = timeoutMs || 15000;
             retries = (retries === undefined) ? 1 : retries;
             let lastErr;
             for (let i = 0; i <= retries; i++) {
                 const ctrl = new AbortController();
                 const timer = setTimeout(() => ctrl.abort(), timeoutMs);
                 try {
-                    const res = await fetch(url, Object.assign({ redirect: 'follow', signal: ctrl.signal }, opts || {}));
+                    const res = await fetch(getAuthScriptUrl(), {
+                        method: 'POST',
+                        redirect: 'follow',
+                        signal: ctrl.signal,
+                        body: JSON.stringify(payload)
+                    });
                     clearTimeout(timer);
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     return await res.json();
                 } catch (e) {
                     clearTimeout(timer);
                     lastErr = e;
-                    if (i < retries) await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000));
+                    if (i < retries) await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
                 }
             }
             throw lastErr;
         }
 
-        async function fetchUsers() {
-            try {
-                const url = getAuthScriptUrl() + '?action=list';
-                const data = await fetchJSON(url);
-                if (data && data.success) return data.users;
-                return null;
-            } catch (e) {
-                console.error('Failed to fetch users:', e);
-                return null;
-            }
+        // ---------- 預熱：使用者打字的同時把 Apps Script 容器叫醒 ----------
+        let _warmed = false;
+        function warmUpAuth() {
+            if (_warmed) return;
+            _warmed = true;
+            fetch(getAuthScriptUrl() + '?action=ping', { redirect: 'follow', cache: 'no-store' })
+                .catch(() => { _warmed = false; });
         }
 
+        // ---------- Session token ----------
+        function b64urlToStr(s) {
+            s = s.replace(/-/g, '+').replace(/_/g, '/');
+            while (s.length % 4) s += '=';
+            const bin = atob(s);
+            return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+        }
+        function strToB64url(s) {
+            const bytes = new TextEncoder().encode(s);
+            let bin = '';
+            bytes.forEach(b => { bin += String.fromCharCode(b); });
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+        // 只解碼、不驗簽（用戶端沒有金鑰）。簽章由伺服器在每次特權操作時驗證。
+        function decodeToken(token) {
+            try {
+                const p = JSON.parse(b64urlToStr(String(token).split('.')[0]));
+                if (!p || !p.e || p.e * 1000 < Date.now()) return null;
+                return p;
+            } catch (e) { return null; }
+        }
+        function saveSession(token) {
+            authToken = token;
+            try { localStorage.setItem(SESSION_KEY, token); } catch (e) {}
+        }
+        function clearSession() {
+            authToken = null;
+            try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+        }
+
+        // ---------- 登入 ----------
         async function doLogin() {
-            const account = document.getElementById('loginAccount').value.trim();
-            const password = document.getElementById('loginPassword').value.trim();
+            const accountEl  = document.getElementById('loginAccount');
+            const passwordEl = document.getElementById('loginPassword');
+            const account  = accountEl.value.trim();
+            const password = passwordEl.value;
             const errorEl = document.getElementById('loginError');
             const btn = document.getElementById('loginBtn');
 
@@ -1035,46 +1099,53 @@
             errorEl.textContent = '';
 
             try {
-                // 維持原本的 GET 介面（Auth 腳本的 doPost 目前只處理 add/delete），
-                // 但加上 15 秒逾時 + 一次重試，避免 Apps Script 排隊時整個登入畫面卡死。
-                // 若要把密碼改走 POST（建議），見交付說明中的 Auth 腳本補丁。
-                const url = getAuthScriptUrl() + '?action=login&account=' + encodeURIComponent(account) + '&password=' + encodeURIComponent(password);
-                const data = await fetchJSON(url, null, 15000, 1);
+                const authKey = await deriveAuthKey(account, password);
+                passwordEl.value = '';  // 明文不留在 DOM
+                const data = await authRequest(
+                    { action: 'login', account: account, authKey: authKey }, 15000, 1);
 
-                btn.disabled = false;
-                btn.textContent = '登入';
-
-                if (data.success) {
-                    currentUser = { account: data.account, role: data.role || 'user' };
-                    sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
+                if (data && data.success && data.token) {
+                    const p = decodeToken(data.token);
+                    if (!p) throw new Error('BAD_TOKEN');
+                    saveSession(data.token);
+                    currentUser = { account: p.a, role: p.r };
                     applyLogin();
                 } else {
-                    errorEl.textContent = data.error || '帳號或密碼錯誤';
+                    errorEl.textContent = (data && data.error) || '帳號或密碼錯誤';
                 }
             } catch (e) {
+                if (e.message === 'NO_WEBCRYPTO') {
+                    errorEl.textContent = '此瀏覽器不支援安全登入，請改用新版 Chrome 或 Edge';
+                } else if (e.name === 'AbortError') {
+                    errorEl.textContent = '伺服器忙碌（逾時），請再按一次登入';
+                } else {
+                    errorEl.textContent = '無法連線至帳號資料庫，請稍後再試';
+                }
+            } finally {
                 btn.disabled = false;
                 btn.textContent = '登入';
-                errorEl.textContent = (e.name === 'AbortError')
-                    ? '伺服器忙碌（逾時），請再按一次登入'
-                    : '無法連線至帳號資料庫，請稍後再試';
             }
         }
 
+        // 以主管身分瀏覽：純用戶端，無 token，任何特權操作都會被伺服器拒絕
         function guestLogin() {
-            currentUser = { account: '主管', role: 'guest' };
-            sessionStorage.setItem('ndtUser', JSON.stringify(currentUser));
+            const payload = { a: '主管', r: 'guest', e: Math.floor(Date.now() / 1000) + 12 * 3600 };
+            currentUser = { account: payload.a, role: payload.r };
+            authToken = null;
+            try { localStorage.setItem(SESSION_KEY, strToB64url(JSON.stringify(payload)) + '.guest'); } catch (e) {}
             applyLogin();
         }
 
         function doLogout() {
             currentUser = null;
-            sessionStorage.removeItem('ndtUser');
+            clearSession();
             document.getElementById('mainContainer').style.display = 'none';
             document.getElementById('loginOverlay').classList.remove('hidden');
             document.body.className = '';
             document.getElementById('loginAccount').value = '';
             document.getElementById('loginPassword').value = '';
             document.getElementById('loginError').textContent = '';
+            warmUpAuth();
         }
 
         function applyLogin() {
@@ -1085,12 +1156,22 @@
             document.getElementById('userDisplay').textContent = currentUser.account;
             document.getElementById('userRole').textContent = roleLabels[currentUser.role] || currentUser.role;
 
-            // Apply role class to body for CSS-based permission
             document.body.className = 'role-' + currentUser.role;
 
-            // If admin, load user list
-            if (currentUser.role === 'admin') {
+            if (currentUser.role === 'admin' && authToken) {
                 loadUserList();
+            }
+        }
+
+        // ---------- 帳號管理（皆需 admin token）----------
+        async function fetchUsers() {
+            try {
+                const data = await authRequest({ action: 'list', token: authToken }, 12000, 1);
+                if (data && data.success) return data.users;
+                return null;
+            } catch (e) {
+                console.error('Failed to fetch users:', e);
+                return null;
             }
         }
 
@@ -1111,29 +1192,27 @@
 
         async function addUser() {
             const account = document.getElementById('newAccount').value.trim();
-            const password = document.getElementById('newPassword').value.trim();
+            const passwordEl = document.getElementById('newPassword');
+            const password = passwordEl.value;
             const role = document.getElementById('newRole').value;
             const msg = document.getElementById('adminMsg');
 
             if (!account || !password) { msg.textContent = '請輸入帳號和密碼'; msg.style.color = '#ef4444'; return; }
-
-            const url = getAuthScriptUrl();
-            if (!url) { msg.textContent = '未設定 Apps Script URL'; msg.style.color = '#ef4444'; return; }
+            if (password.length < 10) { msg.textContent = '密碼至少 10 個字元'; msg.style.color = '#ef4444'; return; }
+            if (!authToken) { msg.textContent = '請以管理員帳號登入'; msg.style.color = '#ef4444'; return; }
 
             msg.textContent = '新增中...'; msg.style.color = '#64748b';
             try {
-                const res = await fetch(url, {
-                    method: 'POST', redirect: 'follow',
-                    body: JSON.stringify({ action: 'add', account, password, role })
-                });
-                const data = await res.json();
-                if (data.success) {
+                const authKey = await deriveAuthKey(account, password);
+                passwordEl.value = '';
+                const data = await authRequest(
+                    { action: 'add', account: account, authKey: authKey, role: role, token: authToken });
+                if (data && data.success) {
                     msg.textContent = '已新增帳號: ' + account; msg.style.color = '#10b981';
                     document.getElementById('newAccount').value = '';
-                    document.getElementById('newPassword').value = '';
                     loadUserList();
                 } else {
-                    msg.textContent = data.error || '新增失敗'; msg.style.color = '#ef4444';
+                    msg.textContent = (data && data.error) || '新增失敗'; msg.style.color = '#ef4444';
                 }
             } catch (e) {
                 msg.textContent = '連線失敗: ' + e.message; msg.style.color = '#ef4444';
@@ -1142,40 +1221,39 @@
 
         async function deleteUser(account) {
             if (!confirm('確定要刪除帳號「' + account + '」嗎？')) return;
-            const url = getAuthScriptUrl();
-            if (!url) return;
+            if (!authToken) return;
             const msg = document.getElementById('adminMsg');
             msg.textContent = '刪除中...'; msg.style.color = '#64748b';
             try {
-                const res = await fetch(url, {
-                    method: 'POST', redirect: 'follow',
-                    body: JSON.stringify({ action: 'delete', account })
-                });
-                const data = await res.json();
-                if (data.success) {
+                const data = await authRequest({ action: 'delete', account: account, token: authToken });
+                if (data && data.success) {
                     msg.textContent = '已刪除帳號: ' + account; msg.style.color = '#10b981';
                     loadUserList();
                 } else {
-                    msg.textContent = data.error || '刪除失敗'; msg.style.color = '#ef4444';
+                    msg.textContent = (data && data.error) || '刪除失敗'; msg.style.color = '#ef4444';
                 }
             } catch (e) {
                 msg.textContent = '連線失敗: ' + e.message; msg.style.color = '#ef4444';
             }
         }
 
-        // Auto-login from session
-        (function checkSession() {
-            const saved = sessionStorage.getItem('ndtUser');
-            if (saved) {
-                try {
-                    currentUser = JSON.parse(saved);
-                    applyLogin();
-                } catch(e) { /* ignore */ }
-            }
+        // ---------- 回訪自動登入：零網路請求 ----------
+        (function restoreSession() {
+            let token = null;
+            try { token = localStorage.getItem(SESSION_KEY); } catch (e) {}
+            if (!token) return;
+            const p = decodeToken(token);
+            if (!p) { clearSession(); return; }
+            authToken = (token.split('.')[1] === 'guest') ? null : token;
+            currentUser = { account: p.a, role: p.r };
+            applyLogin();
         })();
 
-        // Enter key to login
         document.addEventListener('DOMContentLoaded', function() {
+            if (!currentUser) warmUpAuth();
+            ['loginAccount', 'loginPassword'].forEach(function(id) {
+                document.getElementById(id).addEventListener('focus', warmUpAuth, { once: true });
+            });
             document.getElementById('loginPassword').addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') doLogin();
             });
@@ -1183,7 +1261,6 @@
                 if (e.key === 'Enter') document.getElementById('loginPassword').focus();
             });
         });
-
         // ======================== App Config ========================
         const APP_CONFIG = {
             home: {
