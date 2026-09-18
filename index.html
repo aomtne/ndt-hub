@@ -751,6 +751,40 @@
         body.role-guest .needs-write { display: none !important; }
         body.role-guest .needs-admin { display: none !important; }
         body.role-user .needs-admin { display: none !important; }
+        /* ======== Setup panel on login box ======== */
+        .login-box .setup-link {
+            display: block; margin-top: 0.9rem; font-size: 0.78rem;
+            color: #94a3b8; cursor: pointer;
+        }
+        .login-box .setup-link:hover { color: #667eea; }
+        .login-box .setup-panel { display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+        .login-box .setup-panel.open { display: block; }
+        .login-box .setup-panel .setup-note {
+            font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.7rem; line-height: 1.5;
+        }
+
+        /* ======== Change password modal ======== */
+        .pwd-overlay {
+            position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+            display: flex; align-items: center; justify-content: center; z-index: 10000;
+        }
+        .pwd-overlay.hidden { display: none; }
+        .pwd-box {
+            background: white; border-radius: 14px; padding: 1.8rem;
+            width: 92%; max-width: 340px; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        }
+        .pwd-box h3 { color: #0f172a; margin: 0 0 1.2rem; font-size: 1.1rem; }
+        .pwd-box .input-field { width: 100%; }
+        .pwd-box .pwd-actions { display: flex; gap: 0.6rem; margin-top: 0.4rem; }
+        .pwd-box .pwd-actions button {
+            flex: 1; padding: 0.7rem; border-radius: 8px; border: none;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer;
+        }
+        .pwd-box .pwd-actions .primary { background: #667eea; color: white; }
+        .pwd-box .pwd-actions .ghost { background: #f1f5f9; color: #475569; }
+        .pwd-box .pwd-msg { font-size: 0.82rem; margin-top: 0.7rem; min-height: 1.2em; }
+
+        body.role-guest .needs-account { display: none !important; }
     </style>
 </head>
 <body>
@@ -765,6 +799,29 @@
             <button class="login-btn" id="loginBtn" onclick="doLogin()">登入</button>
             <div class="login-error" id="loginError"></div>
             <span class="guest-link" onclick="guestLogin()">以主管身份瀏覽</span>
+            <span class="setup-link" onclick="toggleSetup()">首次設定 / 重設管理員</span>
+            <div class="setup-panel" id="setupPanel">
+                <p class="setup-note">設定碼寫在 Auth.gs 最上方的 SETUP_CODE。忘記管理員密碼時也從這裡重設。</p>
+                <input type="text" class="input-field" id="setupCode" placeholder="設定碼" autocomplete="off">
+                <input type="text" class="input-field" id="setupAccount" placeholder="管理員帳號" value="admin" autocomplete="off">
+                <input type="password" class="input-field" id="setupPassword" placeholder="管理員密碼" autocomplete="new-password">
+                <button class="login-btn" id="setupBtn" onclick="doSetup()">建立管理員</button>
+                <div class="login-error" id="setupMsg"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Change password -->
+    <div class="pwd-overlay hidden" id="pwdOverlay">
+        <div class="pwd-box">
+            <h3>修改密碼</h3>
+            <input type="password" class="input-field" id="pwdOld" placeholder="目前密碼" autocomplete="current-password">
+            <input type="password" class="input-field" id="pwdNew" placeholder="新密碼（至少 8 字元）" autocomplete="new-password">
+            <div class="pwd-actions">
+                <button class="ghost" onclick="closeChangePwd()">取消</button>
+                <button class="primary" id="pwdBtn" onclick="submitChangePwd()">更新密碼</button>
+            </div>
+            <div class="pwd-msg" id="pwdMsg"></div>
         </div>
     </div>
 
@@ -858,6 +915,7 @@
                     <div class="user-info" id="userInfo">
                         <span id="userDisplay"></span>
                         <span class="user-role" id="userRole"></span>
+                        <button class="logout-btn needs-account" onclick="openChangePwd()">改密碼</button>
                         <button class="logout-btn" onclick="doLogout()">登出</button>
                     </div>
                 </div>
@@ -978,70 +1036,51 @@
 
     <script>
         // ======================== Auth System ========================
-        // 安全模型：
-        //   1. 明文密碼永遠不離開這台電腦 —— 先用 PBKDF2-SHA256 (150k 次) 推導成 authKey 再送出。
-        //   2. 一律走 POST，密碼衍生值不會出現在網址、瀏覽器歷史或 Apps Script 執行紀錄。
-        //   3. 伺服器只存 SHA256(authKey + 伺服器 pepper)，試算表外洩也無法反推密碼。
-        //   4. 登入成功拿到 HMAC 簽章的 token，12 小時內回訪完全不連網。
-        let currentUser = null; // { account, role }
-        let authToken = null;
+        // 設計要點：
+        //   · 登入走 POST，密碼不會進網址、瀏覽器歷史或 Apps Script 執行紀錄
+        //   · 送出前先在瀏覽器做一次 SHA-256，明文密碼不上網路
+        //   · 伺服器再加一段只存在 Auth.gs 裡的 PEPPER 才寫進試算表
+        //   · 登入成功換到一組 sessionKey，12 小時內回訪不連網
+        let currentUser = null;   // { account, role }
+        let sessionKey  = null;
 
         const AUTH_SCRIPT_URL = 'AKfycby-6wguy0ntofg9fsATOpMalm6nBISmhFek-5LHzvG7QJ4SKrYgtjc_nQL406lSTPUHog';
+        const SESSION_KEY = 'ndtSession';
+        const SESSION_HOURS = 12;
+
         function getAuthScriptUrl() {
             return 'https://script.google.com/macros/s/' + AUTH_SCRIPT_URL + '/exec';
         }
 
-        // 這兩個常數必須與 Auth.gs 註解中的設定一致，改動等同於讓所有密碼失效
-        const PWD_SALT_PREFIX = 'ndt-portal-v1';
-        const PWD_ITERATIONS  = 150000;
-        const SESSION_KEY     = 'ndtSession';
-
-        // ---------- 密碼推導 ----------
-        async function deriveAuthKey(account, password) {
+        // 一次 SHA-256，約 1 ms。account 當 salt，同密碼在不同帳號結果不同。
+        async function hashPassword(account, password) {
             if (!window.crypto || !crypto.subtle) throw new Error('NO_WEBCRYPTO');
-            const enc = new TextEncoder();
-            const material = await crypto.subtle.importKey(
-                'raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-            const bits = await crypto.subtle.deriveBits({
-                name: 'PBKDF2',
-                salt: enc.encode(PWD_SALT_PREFIX + '|' + account.trim().toLowerCase()),
-                iterations: PWD_ITERATIONS,
-                hash: 'SHA-256'
-            }, material, 256);
-            return Array.from(new Uint8Array(bits))
+            const data = new TextEncoder().encode(account.trim().toLowerCase() + '|' + password);
+            const buf = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(buf))
                         .map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        // ---------- 連線 ----------
-        // 注意：不要自行設定 headers，字串 body 會是 text/plain，屬於 simple request，
-        // 才不會多一次 CORS preflight（多一次 = 多一趟 Apps Script 冷啟動）。
-        async function authRequest(payload, timeoutMs, retries) {
-            timeoutMs = timeoutMs || 15000;
-            retries = (retries === undefined) ? 1 : retries;
-            let lastErr;
-            for (let i = 0; i <= retries; i++) {
-                const ctrl = new AbortController();
-                const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-                try {
-                    const res = await fetch(getAuthScriptUrl(), {
-                        method: 'POST',
-                        redirect: 'follow',
-                        signal: ctrl.signal,
-                        body: JSON.stringify(payload)
-                    });
-                    clearTimeout(timer);
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return await res.json();
-                } catch (e) {
-                    clearTimeout(timer);
-                    lastErr = e;
-                    if (i < retries) await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
+        // 不設 headers，字串 body 會是 text/plain，屬於 simple request，不會多一次 CORS preflight
+        async function api(payload, timeoutMs) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), timeoutMs || 15000);
+            try {
+                const res = await fetch(getAuthScriptUrl(), {
+                    method: 'POST', redirect: 'follow', signal: ctrl.signal,
+                    body: JSON.stringify(payload)
+                });
+                const text = await res.text();
+                if (!text.trim().startsWith('{')) {
+                    throw new Error('後端回應異常，請確認 Auth.gs 已部署新版本');
                 }
+                return JSON.parse(text);
+            } finally {
+                clearTimeout(timer);
             }
-            throw lastErr;
         }
 
-        // ---------- 預熱：使用者打字的同時把 Apps Script 容器叫醒 ----------
+        // 預熱：使用者打字時就把 Apps Script 容器叫醒，冷啟動不落在登入路徑上
         let _warmed = false;
         function warmUpAuth() {
             if (_warmed) return;
@@ -1050,95 +1089,61 @@
                 .catch(() => { _warmed = false; });
         }
 
-        // ---------- Session token ----------
-        function b64urlToStr(s) {
-            s = s.replace(/-/g, '+').replace(/_/g, '/');
-            while (s.length % 4) s += '=';
-            const bin = atob(s);
-            return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
-        }
-        function strToB64url(s) {
-            const bytes = new TextEncoder().encode(s);
-            let bin = '';
-            bytes.forEach(b => { bin += String.fromCharCode(b); });
-            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        }
-        // 只解碼、不驗簽（用戶端沒有金鑰）。簽章由伺服器在每次特權操作時驗證。
-        function decodeToken(token) {
+        function saveSession() {
             try {
-                const p = JSON.parse(b64urlToStr(String(token).split('.')[0]));
-                if (!p || !p.e || p.e * 1000 < Date.now()) return null;
-                return p;
-            } catch (e) { return null; }
+                localStorage.setItem(SESSION_KEY, JSON.stringify({
+                    a: currentUser.account, r: currentUser.role, k: sessionKey,
+                    e: Date.now() + SESSION_HOURS * 3600 * 1000
+                }));
+            } catch (e) {}
         }
-        function saveSession(token) {
-            authToken = token;
-            try { localStorage.setItem(SESSION_KEY, token); } catch (e) {}
-        }
-        function clearSession() {
-            authToken = null;
+        function clearSessionStore() {
             try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
         }
 
-        // ---------- 登入 ----------
+        /* -------------------- 登入 -------------------- */
         async function doLogin() {
-            const accountEl  = document.getElementById('loginAccount');
-            const passwordEl = document.getElementById('loginPassword');
-            const account  = accountEl.value.trim();
-            const password = passwordEl.value;
-            const errorEl = document.getElementById('loginError');
-            const btn = document.getElementById('loginBtn');
+            const account  = document.getElementById('loginAccount').value.trim();
+            const pwdEl    = document.getElementById('loginPassword');
+            const password = pwdEl.value;
+            const errorEl  = document.getElementById('loginError');
+            const btn      = document.getElementById('loginBtn');
 
-            if (!account || !password) {
-                errorEl.textContent = '請輸入帳號和密碼';
-                return;
-            }
+            if (!account || !password) { errorEl.textContent = '請輸入帳號和密碼'; return; }
 
-            btn.disabled = true;
-            btn.textContent = '驗證中...';
-            errorEl.textContent = '';
-
+            btn.disabled = true; btn.textContent = '驗證中...'; errorEl.textContent = '';
             try {
-                const authKey = await deriveAuthKey(account, password);
-                passwordEl.value = '';  // 明文不留在 DOM
-                const data = await authRequest(
-                    { action: 'login', account: account, authKey: authKey }, 15000, 1);
+                const pwdHash = await hashPassword(account, password);
+                const data = await api({ action: 'login', account: account, pwdHash: pwdHash });
 
-                if (data && data.success && data.token) {
-                    const p = decodeToken(data.token);
-                    if (!p) throw new Error('BAD_TOKEN');
-                    saveSession(data.token);
-                    currentUser = { account: p.a, role: p.r };
+                if (data.success) {
+                    pwdEl.value = '';
+                    currentUser = { account: data.account, role: data.role };
+                    sessionKey  = data.sessionKey;
+                    saveSession();
                     applyLogin();
                 } else {
-                    errorEl.textContent = (data && data.error) || '帳號或密碼錯誤';
+                    errorEl.textContent = data.error || '帳號或密碼錯誤';
                 }
             } catch (e) {
-                if (e.message === 'NO_WEBCRYPTO') {
-                    errorEl.textContent = '此瀏覽器不支援安全登入，請改用新版 Chrome 或 Edge';
-                } else if (e.name === 'AbortError') {
-                    errorEl.textContent = '伺服器忙碌（逾時），請再按一次登入';
-                } else {
-                    errorEl.textContent = '無法連線至帳號資料庫，請稍後再試';
-                }
+                errorEl.textContent = (e.name === 'AbortError')
+                    ? '伺服器忙碌，請再按一次登入'
+                    : (e.message === 'NO_WEBCRYPTO' ? '請改用新版 Chrome 或 Edge' : e.message);
             } finally {
-                btn.disabled = false;
-                btn.textContent = '登入';
+                btn.disabled = false; btn.textContent = '登入';
             }
         }
 
-        // 以主管身分瀏覽：純用戶端，無 token，任何特權操作都會被伺服器拒絕
         function guestLogin() {
-            const payload = { a: '主管', r: 'guest', e: Math.floor(Date.now() / 1000) + 12 * 3600 };
-            currentUser = { account: payload.a, role: payload.r };
-            authToken = null;
-            try { localStorage.setItem(SESSION_KEY, strToB64url(JSON.stringify(payload)) + '.guest'); } catch (e) {}
+            currentUser = { account: '主管', role: 'guest' };
+            sessionKey = null;
+            saveSession();
             applyLogin();
         }
 
         function doLogout() {
-            currentUser = null;
-            clearSession();
+            currentUser = null; sessionKey = null;
+            clearSessionStore();
             document.getElementById('mainContainer').style.display = 'none';
             document.getElementById('loginOverlay').classList.remove('hidden');
             document.body.className = '';
@@ -1155,32 +1160,107 @@
             const roleLabels = { admin: '管理員', user: '一般人員', guest: '主管' };
             document.getElementById('userDisplay').textContent = currentUser.account;
             document.getElementById('userRole').textContent = roleLabels[currentUser.role] || currentUser.role;
-
             document.body.className = 'role-' + currentUser.role;
 
-            if (currentUser.role === 'admin' && authToken) {
-                loadUserList();
-            }
+            if (currentUser.role === 'admin' && sessionKey) loadUserList();
         }
 
-        // ---------- 帳號管理（皆需 admin token）----------
-        async function fetchUsers() {
+        /* -------------------- 首次設定 / 重設管理員 -------------------- */
+        function toggleSetup() {
+            const p = document.getElementById('setupPanel');
+            p.classList.toggle('open');
+            if (p.classList.contains('open')) document.getElementById('setupCode').focus();
+        }
+
+        async function doSetup() {
+            const code     = document.getElementById('setupCode').value.trim();
+            const account  = document.getElementById('setupAccount').value.trim();
+            const password = document.getElementById('setupPassword').value;
+            const msg      = document.getElementById('setupMsg');
+            const btn      = document.getElementById('setupBtn');
+
+            if (!code || !account || !password) { msg.textContent = '三個欄位都要填'; return; }
+            if (password.length < 8) { msg.textContent = '密碼至少 8 個字元'; return; }
+
+            btn.disabled = true; btn.textContent = '建立中...'; msg.textContent = '';
             try {
-                const data = await authRequest({ action: 'list', token: authToken }, 12000, 1);
-                if (data && data.success) return data.users;
-                return null;
+                const pwdHash = await hashPassword(account, password);
+                const data = await api({ action: 'setup', code: code, account: account, pwdHash: pwdHash });
+                if (data.success) {
+                    msg.style.color = '#10b981';
+                    msg.textContent = '完成，請用這組帳密登入';
+                    document.getElementById('setupCode').value = '';
+                    document.getElementById('setupPassword').value = '';
+                    document.getElementById('loginAccount').value = account;
+                    document.getElementById('loginPassword').focus();
+                } else {
+                    msg.style.color = '#ef4444';
+                    msg.textContent = data.error || '建立失敗';
+                }
             } catch (e) {
-                console.error('Failed to fetch users:', e);
-                return null;
+                msg.style.color = '#ef4444';
+                msg.textContent = e.message;
+            } finally {
+                btn.disabled = false; btn.textContent = '建立管理員';
             }
         }
 
+        /* -------------------- 修改密碼 -------------------- */
+        function openChangePwd() {
+            document.getElementById('pwdOverlay').classList.remove('hidden');
+            document.getElementById('pwdOld').value = '';
+            document.getElementById('pwdNew').value = '';
+            document.getElementById('pwdMsg').textContent = '';
+            document.getElementById('pwdOld').focus();
+        }
+        function closeChangePwd() {
+            document.getElementById('pwdOverlay').classList.add('hidden');
+        }
+
+        async function submitChangePwd() {
+            const oldPwd = document.getElementById('pwdOld').value;
+            const newPwd = document.getElementById('pwdNew').value;
+            const msg    = document.getElementById('pwdMsg');
+            const btn    = document.getElementById('pwdBtn');
+
+            if (!oldPwd || !newPwd) { msg.style.color = '#ef4444'; msg.textContent = '兩個欄位都要填'; return; }
+            if (newPwd.length < 8)  { msg.style.color = '#ef4444'; msg.textContent = '新密碼至少 8 個字元'; return; }
+
+            btn.disabled = true; btn.textContent = '更新中...'; msg.textContent = '';
+            try {
+                const data = await api({
+                    action: 'changePwd',
+                    sessionKey: sessionKey,
+                    oldHash: await hashPassword(currentUser.account, oldPwd),
+                    newHash: await hashPassword(currentUser.account, newPwd)
+                });
+                if (data.success) {
+                    msg.style.color = '#10b981';
+                    msg.textContent = '已更新';
+                    setTimeout(closeChangePwd, 900);
+                } else {
+                    msg.style.color = '#ef4444';
+                    msg.textContent = data.error || '更新失敗';
+                }
+            } catch (e) {
+                msg.style.color = '#ef4444'; msg.textContent = e.message;
+            } finally {
+                btn.disabled = false; btn.textContent = '更新密碼';
+            }
+        }
+
+        /* -------------------- 帳號管理（需管理員） -------------------- */
         async function loadUserList() {
-            const users = await fetchUsers();
             const tbody = document.getElementById('userListBody');
+            let users = null;
+            try {
+                const data = await api({ action: 'list', sessionKey: sessionKey }, 12000);
+                if (data.success) users = data.users;
+            } catch (e) { /* 下面統一處理 */ }
+
             if (!users) { tbody.innerHTML = '<tr><td colspan="3">無法載入</td></tr>'; return; }
 
-            const roleLabels = { admin: '管理員', user: '一般人員', guest: '主管' };
+            const roleLabels = { admin: '管理員', user: '一般人員' };
             tbody.innerHTML = users.map(u => `
                 <tr>
                     <td>${u.account}</td>
@@ -1192,73 +1272,81 @@
 
         async function addUser() {
             const account = document.getElementById('newAccount').value.trim();
-            const passwordEl = document.getElementById('newPassword');
-            const password = passwordEl.value;
-            const role = document.getElementById('newRole').value;
-            const msg = document.getElementById('adminMsg');
+            const pwdEl   = document.getElementById('newPassword');
+            const password = pwdEl.value;
+            const role    = document.getElementById('newRole').value;
+            const msg     = document.getElementById('adminMsg');
 
-            if (!account || !password) { msg.textContent = '請輸入帳號和密碼'; msg.style.color = '#ef4444'; return; }
-            if (password.length < 10) { msg.textContent = '密碼至少 10 個字元'; msg.style.color = '#ef4444'; return; }
-            if (!authToken) { msg.textContent = '請以管理員帳號登入'; msg.style.color = '#ef4444'; return; }
+            if (!account || !password) { msg.style.color = '#ef4444'; msg.textContent = '請輸入帳號和密碼'; return; }
+            if (password.length < 8)   { msg.style.color = '#ef4444'; msg.textContent = '密碼至少 8 個字元'; return; }
 
-            msg.textContent = '新增中...'; msg.style.color = '#64748b';
+            msg.style.color = '#64748b'; msg.textContent = '新增中...';
             try {
-                const authKey = await deriveAuthKey(account, password);
-                passwordEl.value = '';
-                const data = await authRequest(
-                    { action: 'add', account: account, authKey: authKey, role: role, token: authToken });
-                if (data && data.success) {
-                    msg.textContent = '已新增帳號: ' + account; msg.style.color = '#10b981';
+                const data = await api({
+                    action: 'add', sessionKey: sessionKey,
+                    account: account, role: role,
+                    pwdHash: await hashPassword(account, password)
+                });
+                if (data.success) {
+                    msg.style.color = '#10b981'; msg.textContent = '已新增帳號: ' + account;
                     document.getElementById('newAccount').value = '';
+                    pwdEl.value = '';
                     loadUserList();
                 } else {
-                    msg.textContent = (data && data.error) || '新增失敗'; msg.style.color = '#ef4444';
+                    msg.style.color = '#ef4444'; msg.textContent = data.error || '新增失敗';
                 }
             } catch (e) {
-                msg.textContent = '連線失敗: ' + e.message; msg.style.color = '#ef4444';
+                msg.style.color = '#ef4444'; msg.textContent = e.message;
             }
         }
 
         async function deleteUser(account) {
             if (!confirm('確定要刪除帳號「' + account + '」嗎？')) return;
-            if (!authToken) return;
             const msg = document.getElementById('adminMsg');
-            msg.textContent = '刪除中...'; msg.style.color = '#64748b';
+            msg.style.color = '#64748b'; msg.textContent = '刪除中...';
             try {
-                const data = await authRequest({ action: 'delete', account: account, token: authToken });
-                if (data && data.success) {
-                    msg.textContent = '已刪除帳號: ' + account; msg.style.color = '#10b981';
+                const data = await api({ action: 'delete', sessionKey: sessionKey, account: account });
+                if (data.success) {
+                    msg.style.color = '#10b981'; msg.textContent = '已刪除帳號: ' + account;
                     loadUserList();
                 } else {
-                    msg.textContent = (data && data.error) || '刪除失敗'; msg.style.color = '#ef4444';
+                    msg.style.color = '#ef4444'; msg.textContent = data.error || '刪除失敗';
                 }
             } catch (e) {
-                msg.textContent = '連線失敗: ' + e.message; msg.style.color = '#ef4444';
+                msg.style.color = '#ef4444'; msg.textContent = e.message;
             }
         }
 
-        // ---------- 回訪自動登入：零網路請求 ----------
+        /* -------------------- 回訪自動登入：零網路請求 -------------------- */
         (function restoreSession() {
-            let token = null;
-            try { token = localStorage.getItem(SESSION_KEY); } catch (e) {}
-            if (!token) return;
-            const p = decodeToken(token);
-            if (!p) { clearSession(); return; }
-            authToken = (token.split('.')[1] === 'guest') ? null : token;
-            currentUser = { account: p.a, role: p.r };
-            applyLogin();
+            let raw = null;
+            try { raw = localStorage.getItem(SESSION_KEY); } catch (e) {}
+            if (!raw) return;
+            try {
+                const s = JSON.parse(raw);
+                if (!s.e || s.e < Date.now()) { clearSessionStore(); return; }
+                currentUser = { account: s.a, role: s.r };
+                sessionKey  = s.k || null;
+                applyLogin();
+            } catch (e) { clearSessionStore(); }
         })();
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             if (!currentUser) warmUpAuth();
-            ['loginAccount', 'loginPassword'].forEach(function(id) {
+            ['loginAccount', 'loginPassword'].forEach(function (id) {
                 document.getElementById(id).addEventListener('focus', warmUpAuth, { once: true });
             });
-            document.getElementById('loginPassword').addEventListener('keydown', function(e) {
+            document.getElementById('loginAccount').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') document.getElementById('loginPassword').focus();
+            });
+            document.getElementById('loginPassword').addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') doLogin();
             });
-            document.getElementById('loginAccount').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') document.getElementById('loginPassword').focus();
+            document.getElementById('setupPassword').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') doSetup();
+            });
+            document.getElementById('pwdNew').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') submitChangePwd();
             });
         });
         // ======================== App Config ========================
